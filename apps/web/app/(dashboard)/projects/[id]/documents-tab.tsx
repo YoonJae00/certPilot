@@ -129,6 +129,9 @@ export function DocumentsTab({ projectId }: { projectId: string }) {
               </span>
             )}
           </form>
+          <p className="mt-3 text-xs text-muted-foreground">
+            문서 상태가 ‘분석 완료’로 바뀌면 모의심사 탭에서 모의심사를 실행하세요.
+          </p>
         </CardContent>
       </Card>
 

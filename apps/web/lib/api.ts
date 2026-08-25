@@ -6,8 +6,12 @@
  */
 
 import type {
+  Assessment,
   ChunkSearchParams,
   ChunkSearchResponse,
+  FindingDetail,
+  FindingListParams,
+  FindingRow,
   LoginInput,
   Project,
   ProjectCreateInput,
@@ -86,8 +90,11 @@ interface RequestOptions {
   json?: unknown;
   /** FormData 등 원본 본문(multipart 업로드용). */
   body?: BodyInit;
-  /** 쿼리 파라미터. undefined/null 값은 제외한다. */
-  query?: Record<string, string | number | boolean | undefined | null>;
+  /** 쿼리 파라미터. undefined/null/빈 문자열은 제외하고, 배열은 반복 파라미터로 붙인다. */
+  query?: Record<
+    string,
+    string | number | boolean | readonly string[] | undefined | null
+  >;
   signal?: AbortSignal;
 }
 
@@ -100,6 +107,14 @@ function buildUrl(
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {
     if (value === undefined || value === null || value === "") continue;
+    if (Array.isArray(value)) {
+      // 다중 값은 `key=a&key=b` 형태로 반복해서 보낸다.
+      for (const item of value) {
+        if (item === "") continue;
+        params.append(key, String(item));
+      }
+      continue;
+    }
     params.set(key, String(value));
   }
   const qs = params.toString();
@@ -154,6 +169,41 @@ export async function apiFetch<T>(
   }
 
   return parsed as T;
+}
+
+/** 파일 다운로드용 fetch. XLSX 등 바이너리 응답을 Blob 으로 받는다. */
+export async function apiFetchBlob(
+  path: string,
+  options: Pick<RequestOptions, "query" | "signal"> = {},
+): Promise<Blob> {
+  const { query, signal } = options;
+
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path, query), {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new ApiError(0, "서버에 연결하지 못했습니다. 네트워크 상태를 확인해 주세요.");
+  }
+
+  if (!response.ok) {
+    // 오류 응답은 JSON({detail}) 이므로 본문을 텍스트로 읽어 메시지를 뽑는다.
+    const text = await response.text();
+    let parsed: unknown = text;
+    try {
+      parsed = JSON.parse(text) as unknown;
+    } catch {
+      /* JSON 이 아니면 원문을 그대로 쓴다. */
+    }
+    throw new ApiError(response.status, extractDetail(parsed, response.status));
+  }
+
+  return response.blob();
 }
 
 /* ------------------------------------------------------------------ */
@@ -229,6 +279,87 @@ export const chunksApi = {
         query: { criterion: params.criterion, q: params.q, k: params.k },
         signal,
       },
+    );
+  },
+};
+
+/* ------------------------------------------------------------------ */
+/* 모의심사 · 갭 리포트                                                */
+/* ------------------------------------------------------------------ */
+
+export const assessmentsApi = {
+  /** 모의심사 실행. 202 로 큐에 올라간 실행 정보를 돌려준다. */
+  create(projectId: string): Promise<Assessment> {
+    return apiFetch<Assessment>(`/projects/${projectId}/assessments`, {
+      method: "POST",
+    });
+  },
+  /** 실행 이력(최신순). */
+  list(projectId: string, signal?: AbortSignal): Promise<Assessment[]> {
+    return apiFetch<Assessment[]>(`/projects/${projectId}/assessments`, {
+      signal,
+    });
+  },
+  /** 실행 단건. 진행률 폴링에 쓴다. */
+  get(
+    projectId: string,
+    assessmentId: string,
+    signal?: AbortSignal,
+  ): Promise<Assessment> {
+    return apiFetch<Assessment>(
+      `/projects/${projectId}/assessments/${assessmentId}`,
+      { signal },
+    );
+  },
+  /**
+   * 항목별 판정 목록.
+   *
+   * 화면에서는 101개 전체를 한 번만 받아 클라이언트에서 필터·정렬한다
+   * (다중 상태 필터의 인코딩이 계약에 명시되지 않아 서버 필터에 의존하지 않는다).
+   * params 는 서버 필터를 쓰게 될 때를 위해 그대로 전달할 수 있게 열어 둔다.
+   */
+  findings(
+    projectId: string,
+    assessmentId: string,
+    params: FindingListParams = {},
+    signal?: AbortSignal,
+  ): Promise<FindingRow[]> {
+    return apiFetch<FindingRow[]>(
+      `/projects/${projectId}/assessments/${assessmentId}/findings`,
+      {
+        query: {
+          status: Array.isArray(params.status)
+            ? params.status
+            : params.status,
+          chapter: params.chapter,
+          q: params.q,
+          sort: params.sort,
+        },
+        signal,
+      },
+    );
+  },
+  /** 판정 상세(근거 청크·클라우드 증적 포함). */
+  finding(
+    projectId: string,
+    assessmentId: string,
+    findingId: string,
+    signal?: AbortSignal,
+  ): Promise<FindingDetail> {
+    return apiFetch<FindingDetail>(
+      `/projects/${projectId}/assessments/${assessmentId}/findings/${findingId}`,
+      { signal },
+    );
+  },
+  /** 갭 리포트 XLSX 원본. 파일명은 호출 측에서 정한다. */
+  report(
+    projectId: string,
+    assessmentId: string,
+    signal?: AbortSignal,
+  ): Promise<Blob> {
+    return apiFetchBlob(
+      `/projects/${projectId}/assessments/${assessmentId}/report.xlsx`,
+      { signal },
     );
   },
 };

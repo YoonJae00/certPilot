@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 
+import { AssessmentTab } from "@/app/(dashboard)/projects/[id]/assessment-tab";
 import { DocumentsTab } from "@/app/(dashboard)/projects/[id]/documents-tab";
+import { ReportTab } from "@/app/(dashboard)/projects/[id]/report-tab";
+import { useAssessments } from "@/app/(dashboard)/projects/[id]/use-assessments";
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -25,6 +28,9 @@ export default function ProjectDetailPage() {
   const router = useRouter();
   const [project, setProject] = React.useState<Project | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  // 모의심사 탭과 리포트 탭이 같은 실행을 가리키도록 상태를 여기서 들고 있는다.
+  const [tab, setTab] = React.useState("documents");
+  const assessments = useAssessments(projectId);
 
   React.useEffect(() => {
     if (!projectId) return;
@@ -140,7 +146,7 @@ export default function ProjectDetailPage() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="documents">
+      <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="documents">문서</TabsTrigger>
           <TabsTrigger value="assessment">모의심사</TabsTrigger>
@@ -152,16 +158,18 @@ export default function ProjectDetailPage() {
         </TabsContent>
 
         <TabsContent value="assessment" className="mt-4">
-          <ComingSoon
-            title="모의심사"
-            description="업로드한 문서와 증적을 기준별로 대조해 충족 여부를 판정하는 기능입니다. 준비 중입니다."
+          <AssessmentTab
+            assessments={assessments}
+            onGoToReport={() => setTab("report")}
           />
         </TabsContent>
 
         <TabsContent value="report" className="mt-4">
-          <ComingSoon
-            title="갭 리포트"
-            description="모의심사 결과를 기준별 갭과 보완 과제로 정리해 보여 줍니다. 준비 중입니다."
+          <ReportTab
+            projectId={project.id}
+            projectName={project.name}
+            assessments={assessments}
+            onGoToAssessment={() => setTab("assessment")}
           />
         </TabsContent>
       </Tabs>
@@ -183,22 +191,5 @@ function Field({
       </p>
       <div>{children}</div>
     </div>
-  );
-}
-
-function ComingSoon({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col items-center gap-2 py-16 text-center">
-        <p className="text-sm font-medium">{title} — 준비 중</p>
-        <p className="max-w-md text-sm text-muted-foreground">{description}</p>
-      </CardContent>
-    </Card>
   );
 }

@@ -1,6 +1,14 @@
 /** 화면 표기용 한국어 라벨과 포맷 도우미. */
 
-import type { CertType, DocumentStatus, UserRole } from "@/lib/types";
+import type {
+  AssessmentStatus,
+  CertType,
+  CriterionChapter,
+  DecidedBy,
+  DocumentStatus,
+  FindingStatus,
+  UserRole,
+} from "@/lib/types";
 
 /** 역할 뱃지 문구. */
 export const ROLE_LABELS: Record<UserRole, string> = {
@@ -64,4 +72,148 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/* ------------------------------------------------------------------ */
+/* 모의심사 · 갭 리포트                                                */
+/* ------------------------------------------------------------------ */
+
+/** 모의심사 실행 상태 문구. */
+export const ASSESSMENT_STATUS_LABELS: Record<AssessmentStatus, string> = {
+  queued: "대기 중",
+  running: "진행 중",
+  done: "완료",
+  failed: "실패",
+};
+
+/** 실행 상태별 뱃지 스타일. */
+export const ASSESSMENT_STATUS_CLASSES: Record<AssessmentStatus, string> = {
+  queued: "border-transparent bg-secondary text-secondary-foreground",
+  running: "border-transparent bg-primary text-primary-foreground",
+  done: "border-transparent bg-success text-success-foreground",
+  failed: "border-transparent bg-destructive text-destructive-foreground",
+};
+
+/** 판정 문구(PRD F3). */
+export const FINDING_STATUS_LABELS: Record<FindingStatus, string> = {
+  met: "충족",
+  partial: "부분충족",
+  unmet: "미충족",
+  unknown: "판단불가",
+};
+
+/** 판정별 뱃지 스타일. 충족=초록 / 부분충족=노랑 / 미충족=빨강 / 판단불가=회색. */
+export const FINDING_STATUS_CLASSES: Record<FindingStatus, string> = {
+  met: "border-transparent bg-success text-success-foreground",
+  partial: "border-transparent bg-warning text-warning-foreground",
+  unmet: "border-transparent bg-destructive text-destructive-foreground",
+  unknown: "border-transparent bg-secondary text-secondary-foreground",
+};
+
+/** 판정 분포·필터에서 쓰는 표기 순서. */
+export const FINDING_STATUS_ORDER: readonly FindingStatus[] = [
+  "met",
+  "partial",
+  "unmet",
+  "unknown",
+] as const;
+
+/** 판정 정렬 순서. 조치가 급한 미충족부터 보여 준다. */
+const FINDING_STATUS_SEVERITY: Record<FindingStatus, number> = {
+  unmet: 0,
+  partial: 1,
+  unknown: 2,
+  met: 3,
+};
+
+/** 판정 기준 정렬용 가중치. 값이 작을수록 위로 온다. */
+export function findingSeverity(status: FindingStatus | string): number {
+  return FINDING_STATUS_SEVERITY[status as FindingStatus] ?? 99;
+}
+
+export function findingStatusLabel(status: FindingStatus | string): string {
+  return FINDING_STATUS_LABELS[status as FindingStatus] ?? status;
+}
+
+/** 판정 주체 문구. */
+export const DECIDED_BY_LABELS: Record<DecidedBy, string> = {
+  rule: "규칙",
+  llm: "AI",
+  reviewer: "심사원",
+};
+
+export function decidedByLabel(value: DecidedBy | string): string {
+  return DECIDED_BY_LABELS[value as DecidedBy] ?? value;
+}
+
+/** 장 전체 명칭. */
+export const CHAPTER_LABELS: Record<CriterionChapter, string> = {
+  "1": "1장 관리체계 수립 및 운영",
+  "2": "2장 보호대책 요구사항",
+  "3": "3장 개인정보 처리단계별 요구사항",
+};
+
+/** 장 축약 명칭. 카드 제목·필터에서 쓴다. */
+export const CHAPTER_SHORT_LABELS: Record<CriterionChapter, string> = {
+  "1": "1장 관리체계",
+  "2": "2장 보호대책",
+  "3": "3장 개인정보",
+};
+
+/** 표기 순서가 고정된 장 목록. */
+export const CHAPTERS: readonly CriterionChapter[] = ["1", "2", "3"] as const;
+
+/** 항목 코드에서 장 번호를 뽑는다. 형식이 다르면 null. */
+export function chapterOf(code: string): CriterionChapter | null {
+  const head = code.trim().split(".")[0];
+  return head === "1" || head === "2" || head === "3" ? head : null;
+}
+
+/**
+ * 비율(0~1)과 백분율(0~100)이 섞여 올 수 있는 값을 백분율로 맞춘다.
+ * 서버가 어느 쪽으로 주는지 계약에 명시되지 않아 방어적으로 처리한다.
+ */
+export function toPercent(value: number | null | undefined): number | null {
+  if (value === null || value === undefined || Number.isNaN(value)) return null;
+  return value > 0 && value <= 1 ? value * 100 : value;
+}
+
+/** 백분율 표기. 값이 없으면 대시. */
+export function formatPercent(
+  value: number | null | undefined,
+  fractionDigits = 0,
+): string {
+  const percent = toPercent(value);
+  if (percent === null) return "—";
+  return `${percent.toFixed(fractionDigits)}%`;
+}
+
+/** USD 비용 표기. 값이 없으면 대시. */
+export function formatCostUsd(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return `$${value.toFixed(2)}`;
+}
+
+/** ISO 일시를 `YYYY. MM. DD. HH:MM` 로 표기한다. 값이 없으면 대시. */
+export function formatDateTime(value: string | null | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${formatDate(value)} ${hour}:${minute}`;
+}
+
+/** 파일명에 붙일 날짜 도장(YYYYMMDD). 인자가 없으면 오늘. */
+export function fileDateStamp(value?: string | null): string {
+  const date = value ? new Date(value) : new Date();
+  const safe = Number.isNaN(date.getTime()) ? new Date() : date;
+  const month = String(safe.getMonth() + 1).padStart(2, "0");
+  const day = String(safe.getDate()).padStart(2, "0");
+  return `${safe.getFullYear()}${month}${day}`;
+}
+
+/** 파일명에 쓸 수 없는 문자를 밑줄로 바꾼다. */
+export function sanitizeFileName(value: string): string {
+  return value.replace(/[\\/:*?"<>|]/g, "_").trim() || "프로젝트";
 }
