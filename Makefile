@@ -4,7 +4,7 @@
 API_DIR := apps/api
 WEB_DIR := apps/web
 
-.PHONY: help dev down api web check check-api check-web demo eval
+.PHONY: help dev down api web check check-api check-web kb demo eval
 
 help: ## 사용 가능한 타깃을 보여준다
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -46,6 +46,9 @@ check-web: ## web 검사 (eslint + tsc)
 	cd $(WEB_DIR) && npm run lint
 	@echo "== web: tsc =="
 	cd $(WEB_DIR) && npm run typecheck
+
+kb: ## 안내서 PDF에서 data/criteria/criteria.json 재생성
+	cd $(API_DIR) && uv run python ../../scripts/kb_build.py
 
 demo: ## 데모 시드 데이터 적재 (미구현)
 	@echo "not yet"
