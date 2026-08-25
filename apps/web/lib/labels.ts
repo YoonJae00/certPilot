@@ -170,8 +170,8 @@ export function chapterOf(code: string): CriterionChapter | null {
 }
 
 /**
- * 비율(0~1)과 백분율(0~100)이 섞여 올 수 있는 값을 백분율로 맞춘다.
- * 서버가 어느 쪽으로 주는지 계약에 명시되지 않아 방어적으로 처리한다.
+ * 비율(0~1)을 백분율로 바꾼다. 서버는 준비도·신뢰도를 모두 0~1 로 주지만,
+ * 이미 백분율로 온 값(1 초과)은 그대로 두어 두 번 곱하지 않는다.
  */
 export function toPercent(value: number | null | undefined): number | null {
   if (value === null || value === undefined || Number.isNaN(value)) return null;

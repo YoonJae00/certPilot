@@ -26,7 +26,7 @@ import {
   FINDING_STATUS_LABELS,
   formatPercent,
 } from "@/lib/labels";
-import type { EvidenceItem, FindingDetail, FindingRow } from "@/lib/types";
+import type { FindingDetail, FindingEvidence, FindingRow } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function FindingDetailSheet({
@@ -72,8 +72,7 @@ export function FindingDetailSheet({
   // 상세를 받기 전에는 테이블 행에 있던 값으로 먼저 채운다.
   const row: FindingRow | null = detail ?? finding;
   const hasEvidence =
-    (detail?.evidence_chunks.length ?? 0) > 0 ||
-    (detail?.evidence_items.length ?? 0) > 0;
+    (detail?.chunks.length ?? 0) > 0 || (detail?.evidence.length ?? 0) > 0;
 
   return (
     <Sheet open={finding !== null} onOpenChange={onOpenChange}>
@@ -88,10 +87,10 @@ export function FindingDetailSheet({
                 <span className="tabular-nums text-muted-foreground">
                   {row.criterion_code}
                 </span>{" "}
-                {row.criterion_title}
+                {row.title}
               </SheetTitle>
               <SheetDescription className="text-left">
-                {row.criterion_section}
+                {row.section}
               </SheetDescription>
             </SheetHeader>
 
@@ -127,7 +126,7 @@ export function FindingDetailSheet({
             {detail ? (
               <div className="mt-6 space-y-6 pb-6">
                 <Section title="판정 근거">
-                  {detail.rationale?.trim() ? (
+                  {detail.rationale.trim() ? (
                     <p className="whitespace-pre-wrap text-sm leading-relaxed">
                       {detail.rationale}
                     </p>
@@ -136,19 +135,17 @@ export function FindingDetailSheet({
                   )}
                 </Section>
 
-                <Section
-                  title={`근거 문서 (${detail.evidence_chunks.length}건)`}
-                >
-                  {detail.evidence_chunks.length === 0 ? (
+                <Section title={`근거 문서 (${detail.chunks.length}건)`}>
+                  {detail.chunks.length === 0 ? (
                     <EmptyText>인용된 문서 근거가 없습니다.</EmptyText>
                   ) : (
                     <div className="space-y-3">
-                      {detail.evidence_chunks.map((chunk) => (
-                        <Card key={chunk.id}>
+                      {detail.chunks.map((chunk) => (
+                        <Card key={chunk.chunk_id}>
                           <CardContent className="space-y-2 p-4">
                             <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                               <span className="font-medium text-foreground">
-                                {chunk.document_filename}
+                                {chunk.filename}
                               </span>
                               <span>
                                 {chunk.page === null
@@ -169,15 +166,13 @@ export function FindingDetailSheet({
                   )}
                 </Section>
 
-                <Section
-                  title={`클라우드 증적 (${detail.evidence_items.length}건)`}
-                >
-                  {detail.evidence_items.length === 0 ? (
+                <Section title={`클라우드 증적 (${detail.evidence.length}건)`}>
+                  {detail.evidence.length === 0 ? (
                     <EmptyText>연결된 커넥터 증적이 없습니다.</EmptyText>
                   ) : (
                     <div className="space-y-3">
-                      {detail.evidence_items.map((item) => (
-                        <EvidenceItemCard key={item.id} item={item} />
+                      {detail.evidence.map((item) => (
+                        <EvidenceCard key={item.evidence_id} item={item} />
                       ))}
                     </div>
                   )}
@@ -240,12 +235,13 @@ function EmptyText({ children }: { children: React.ReactNode }) {
   return <p className="text-sm text-muted-foreground">{children}</p>;
 }
 
-/** 클라우드 증적 1건. payload 는 점검별로 구조가 달라 키·값 목록으로 편다. */
-function EvidenceItemCard({ item }: { item: EvidenceItem }) {
+/** 클라우드 증적 1건. payload_json 은 점검별로 구조가 달라 키·값 목록으로 편다. */
+function EvidenceCard({ item }: { item: FindingEvidence }) {
+  const payload: unknown = item.payload_json;
   const entries =
-    item.payload && typeof item.payload === "object" && !Array.isArray(item.payload)
-      ? Object.entries(item.payload as Record<string, unknown>)
-      : null;
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? Object.entries(payload as Record<string, unknown>)
+      : [];
 
   return (
     <Card>
@@ -257,7 +253,7 @@ function EvidenceItemCard({ item }: { item: EvidenceItem }) {
           <span className="font-medium">{item.check_id}</span>
           <Badge variant="secondary">{item.status}</Badge>
         </div>
-        {entries ? (
+        {entries.length > 0 ? (
           <dl className="grid gap-x-4 gap-y-1 text-xs sm:grid-cols-[minmax(0,10rem)_1fr]">
             {entries.map(([key, value]) => (
               <React.Fragment key={key}>
@@ -268,12 +264,8 @@ function EvidenceItemCard({ item }: { item: EvidenceItem }) {
               </React.Fragment>
             ))}
           </dl>
-        ) : item.payload === null || item.payload === undefined ? (
-          <EmptyText>수집된 상세 값이 없습니다.</EmptyText>
         ) : (
-          <pre className="overflow-x-auto rounded-md bg-muted p-3 text-[11px] leading-relaxed">
-            {formatPayloadValue(item.payload)}
-          </pre>
+          <EmptyText>수집된 상세 값이 없습니다.</EmptyText>
         )}
       </CardContent>
     </Card>

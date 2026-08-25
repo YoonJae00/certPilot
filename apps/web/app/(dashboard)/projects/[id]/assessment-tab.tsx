@@ -70,11 +70,14 @@ export function AssessmentTab({
     start,
   } = assessments;
 
-  const progress = selected?.summary?.progress ?? null;
+  const summaryJson = selected?.summary_json ?? null;
+  const progress = summaryJson?.progress ?? null;
   const progressPercent =
     progress && progress.total > 0
       ? (progress.done / progress.total) * 100
       : null;
+  // 집계(counts·by_chapter)는 판정이 끝난 뒤에야 채워진다. 진행 중에는 progress 만 온다.
+  const counts = summaryJson?.counts ?? null;
 
   return (
     <div className="space-y-4">
@@ -179,10 +182,10 @@ export function AssessmentTab({
         </Card>
       ) : (
         <>
-          {selected?.summary ? (
+          {counts ? (
             <>
-              <ChapterReadinessCards summary={selected.summary.by_chapter} />
-              <StatusDistribution counts={selected.summary.counts} />
+              <ChapterReadinessCards byChapter={summaryJson?.by_chapter ?? {}} />
+              <StatusDistribution counts={counts} />
             </>
           ) : (
             <Card>
@@ -207,14 +210,15 @@ export function AssessmentTab({
 
 /** 장별 준비도 카드 3개(1장 관리체계 / 2장 보호대책 / 3장 개인정보). */
 function ChapterReadinessCards({
-  summary,
+  byChapter,
 }: {
-  summary: Partial<Record<CriterionChapter, ChapterSummary>>;
+  /** `summary_json.by_chapter`. 키는 장 번호 문자열. */
+  byChapter: Partial<Record<CriterionChapter, ChapterSummary>>;
 }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {CHAPTERS.map((chapter) => {
-        const stats = summary[chapter];
+        const stats = byChapter[chapter];
         const percent = toPercent(stats?.readiness ?? null);
 
         return (
@@ -313,7 +317,7 @@ function HistoryTable({
           <TableBody>
             {history.map((item) => {
               const isSelected = item.id === selectedId;
-              const progress = item.summary?.progress;
+              const progress = item.summary_json?.progress;
 
               return (
                 <TableRow

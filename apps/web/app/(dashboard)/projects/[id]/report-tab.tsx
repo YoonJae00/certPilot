@@ -41,7 +41,6 @@ import {
   FINDING_STATUS_CLASSES,
   FINDING_STATUS_LABELS,
   FINDING_STATUS_ORDER,
-  chapterOf,
   fileDateStamp,
   findingSeverity,
   formatPercent,
@@ -141,14 +140,15 @@ export function ReportTab({
       if (statusFilter.length > 0 && !statusFilter.includes(row.status)) {
         return false;
       }
-      if (chapterFilter !== "all" && chapterOf(row.criterion_code) !== chapterFilter) {
+      // 장 번호는 서버가 판정마다 숫자로 실어 준다(코드 파싱보다 이쪽이 확실하다).
+      if (chapterFilter !== "all" && String(row.chapter) !== chapterFilter) {
         return false;
       }
       if (term) {
         const haystack = [
           row.criterion_code,
-          row.criterion_title,
-          row.criterion_section,
+          row.title,
+          row.section,
           row.predicted_defect ?? "",
           row.recommendation ?? "",
         ]
@@ -439,9 +439,9 @@ export function ReportTab({
                       {row.criterion_code}
                     </TableCell>
                     <TableCell>
-                      <span className="font-medium">{row.criterion_title}</span>
+                      <span className="font-medium">{row.title}</span>
                       <span className="ml-2 text-xs text-muted-foreground">
-                        {row.criterion_section}
+                        {row.section}
                       </span>
                     </TableCell>
                     <TableCell>

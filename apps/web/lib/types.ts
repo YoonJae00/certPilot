@@ -106,10 +106,17 @@ export type AssessmentStatus = "queued" | "running" | "done" | "failed";
 /** 항목별 판정 결과. */
 export type FindingStatus = "met" | "partial" | "unmet" | "unknown";
 
+/** 커넥터 증적 1건의 점검 결과(EvidenceStatus). */
+export type EvidenceStatus = "pass" | "fail" | "warn" | "unknown";
+
 /** 판정을 확정한 주체. 규칙 판정이 LLM 판정을 덮어쓸 수 있다(PRD F3). */
 export type DecidedBy = "rule" | "llm" | "reviewer";
 
-/** 인증기준 장 번호. 1장 관리체계 / 2장 보호대책 / 3장 개인정보. */
+/**
+ * 인증기준 장 번호. 1장 관리체계 / 2장 보호대책 / 3장 개인정보.
+ * `summary_json.by_chapter` 의 키 형식(JSON 객체 키라 문자열)이다.
+ * 판정 1건의 `chapter` 는 숫자(1|2|3)로 온다.
+ */
 export type CriterionChapter = "1" | "2" | "3";
 
 /** 판정 분포. 전체 101개 항목의 합계. */
@@ -123,8 +130,7 @@ export interface FindingCounts {
 /**
  * 장별 집계. `readiness` 는 준비도로, PRD F8 기준
  * `(met + 0.5·partial) / (총계 − unknown)` 이다.
- * 서버가 비율(0~1)로 줄지 백분율(0~100)로 줄지 확정되지 않아
- * 화면에서는 `toPercent()` 로 정규화해 쓴다.
+ * 서버는 0~1 비율로 주지만 화면에서는 `toPercent()` 로 정규화해 쓴다.
  */
 export interface ChapterSummary extends FindingCounts {
   total: number;
@@ -137,12 +143,25 @@ export interface AssessmentProgress {
   total: number;
 }
 
-/** `AssessmentOut.summary`. 실행이 시작되기 전에는 null 이다. */
+/**
+ * `AssessmentOut.summary_json`.
+ *
+ * 서버는 실행 단계에 따라 채우는 키가 다르다.
+ *  - queued: 필드 자체가 null
+ *  - running: `progress` 만
+ *  - done: `counts` · `by_chapter` · `progress` · `readiness`
+ *  - failed: 그때까지의 내용 + `reason`
+ * 그래서 하위 키는 모두 선택 항목으로 둔다.
+ */
 export interface AssessmentSummary {
-  counts: FindingCounts;
+  counts?: FindingCounts;
   /** 키는 장 번호 문자열("1" | "2" | "3"). */
-  by_chapter: Partial<Record<CriterionChapter, ChapterSummary>>;
-  progress: AssessmentProgress;
+  by_chapter?: Partial<Record<CriterionChapter, ChapterSummary>>;
+  progress?: AssessmentProgress;
+  /** 전체 준비도(0~1). 완료된 실행에만 있다. */
+  readiness?: number;
+  /** 실패 사유. status = "failed" 일 때만 있다. */
+  reason?: string;
 }
 
 /** `POST/GET /projects/{id}/assessments` 응답(AssessmentOut). */
@@ -156,65 +175,81 @@ export interface Assessment {
   model: string | null;
   /** 실행 1회 누적 비용(USD). */
   cost_usd: number | null;
-  summary: AssessmentSummary | null;
+  summary_json: AssessmentSummary | null;
+  created_at: string;
 }
 
-/** `GET …/findings` 응답 1건(FindingRow). */
+/** `GET …/findings` 응답 1건(서버 FindingOut). 응답 본문은 이 객체의 배열이다. */
 export interface FindingRow {
   id: string;
   /** 인증기준 코드(예: "2.5.3"). */
   criterion_code: string;
-  criterion_title: string;
+  /** 장 번호(1 | 2 | 3). 서버는 숫자로 준다. */
+  chapter: number;
   /** 소분류 명칭(예: "2.5 인증 및 권한관리"). */
-  criterion_section: string;
+  section: string;
+  /** 인증기준 항목명. */
+  title: string;
   status: FindingStatus;
-  /** 0~1 비율 또는 0~100 백분율. `toPercent()` 로 정규화한다. */
-  confidence: number | null;
-  decided_by: DecidedBy;
+  /** 0~1 비율. `toPercent()` 로 백분율로 바꿔 쓴다. */
+  confidence: number;
+  /** 판정 근거 문장. 목록 응답에도 들어 있다. */
+  rationale: string;
+  /** 근거로 인용한 청크 ID 목록. 본문은 상세 응답의 `chunks` 에 있다. */
+  evidence_chunk_ids: string[];
+  /** 근거로 인용한 증적 ID 목록. 본문은 상세 응답의 `evidence` 에 있다. */
+  evidence_ids: string[];
   predicted_defect: string | null;
   recommendation: string | null;
+  decided_by: DecidedBy;
+  created_at: string;
 }
 
-/** 판정 근거로 인용된 문서 청크. */
-export interface EvidenceChunk {
-  id: string;
-  document_filename: string;
+/** 판정 근거로 인용된 문서 청크(서버 FindingChunkOut). */
+export interface FindingChunk {
+  chunk_id: string;
+  document_id: string;
+  /** 원본 문서 파일명. */
+  filename: string;
   page: number | null;
   text: string;
 }
 
-/** 커넥터가 수집한 클라우드 증적. */
-export interface EvidenceItem {
-  id: string;
+/** 커넥터가 수집한 클라우드 증적(서버 FindingEvidenceOut). */
+export interface FindingEvidence {
+  evidence_id: string;
   /** 수집원(예: "aws"). */
   source: string;
   /** 점검 항목 식별자(예: "s3_public_access"). */
   check_id: string;
-  status: string;
+  status: EvidenceStatus;
+  collected_at: string;
   /** 점검 원본 값. 구조는 점검별로 다르다. */
-  payload: unknown;
+  payload_json: Record<string, unknown>;
 }
 
-/** `GET …/findings/{fid}` 응답(FindingDetail). */
+/** `GET …/findings/{fid}` 응답(서버 FindingDetailOut). */
 export interface FindingDetail extends FindingRow {
-  rationale: string | null;
-  evidence_chunks: EvidenceChunk[];
-  evidence_items: EvidenceItem[];
+  /** 인증기준 원문 요구사항. */
+  criterion_requirement: string;
+  chunks: FindingChunk[];
+  evidence: FindingEvidence[];
 }
 
-/**
- * `GET …/findings` 정렬 키.
- * 계약에 값 목록이 명시되지 않아 화면 정렬은 클라이언트에서 처리하고,
- * 이 타입은 서버 정렬을 쓰게 될 때를 위해 남겨 둔다.
- */
+/** `GET …/findings` 정렬 키. 서버가 받는 값 목록 그대로다. */
 export type FindingSort = "code" | "status" | "confidence" | "-confidence";
 
 /** `GET …/findings` 질의 파라미터. */
 export interface FindingListParams {
-  /** 판정 상태. 다중 선택은 반복 파라미터(`status=met&status=unmet`)로 보낸다. */
+  /**
+   * 판정 상태. 배열로 주면 반복 파라미터(`status=met&status=unmet`)로 나간다.
+   * 다만 현재 서버는 단일 값만 바인딩하므로(마지막 값이 이긴다) 화면은 서버 필터에
+   * 기대지 않고 목록을 한 번 받아 클라이언트에서 필터한다.
+   */
   status?: FindingStatus | FindingStatus[];
+  /** 장 번호. 서버는 1~3 정수로 받는다(쿼리 문자열이라 "1" 로 보내도 같다). */
   chapter?: CriterionChapter;
-  /** 코드·항목명 자유 검색어. */
+  /** 코드·항목명·소분류·판정 근거 자유 검색어. */
   q?: string;
   sort?: FindingSort;
 }
