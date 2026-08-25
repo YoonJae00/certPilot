@@ -1,6 +1,7 @@
 """CertPilot API 진입점."""
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.api import (
@@ -14,11 +15,21 @@ from app.api import (
     projects,
     reviews,
 )
+from app.core.config import get_settings
 
 app = FastAPI(
     title="CertPilot API",
     description="ISMS-P 준비·유지 코파일럿 백엔드",
     version="0.1.0",
+)
+
+# 브라우저 프런트(다른 포트)가 세션 쿠키를 실어 호출할 수 있어야 한다.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o.strip() for o in get_settings().web_origins.split(",") if o.strip()],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(auth.router)

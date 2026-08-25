@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     # `session_secret` 에서 파생한 키를 쓰고 경고 로그를 남긴다(PRD §10).
     connector_encryption_key: str | None = None
 
+    # 브라우저 프런트 출처(CORS 허용 대상). 쉼표로 여러 개. 운영 배포 시 실제 도메인으로 덮어쓴다.
+    web_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
     @field_validator("anthropic_api_key", "connector_encryption_key", mode="after")
     @classmethod
     def _empty_to_none(cls, value: str | None) -> str | None:
