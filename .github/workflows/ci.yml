@@ -12,6 +12,23 @@ jobs:
     defaults:
       run:
         working-directory: apps/api
+    # DB 테스트가 CI 에서도 돌아야 한다. 로컬(5433)과 달리 CI 는 5432 를 쓴다.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: certpilot
+          POSTGRES_PASSWORD: certpilot
+          POSTGRES_DB: certpilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U certpilot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql+psycopg://certpilot:certpilot@localhost:5432/certpilot
     steps:
       - uses: actions/checkout@v4
 
@@ -28,6 +45,9 @@ jobs:
 
       - name: mypy
         run: uv run mypy app
+
+      - name: alembic 마이그레이션
+        run: uv run alembic upgrade head
 
       - name: pytest
         run: uv run pytest -q

@@ -3,11 +3,17 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 
+from app.api import auth, orgs, projects
+
 app = FastAPI(
     title="CertPilot API",
     description="ISMS-P 준비·유지 코파일럿 백엔드",
     version="0.1.0",
 )
+
+app.include_router(auth.router)
+app.include_router(orgs.router)
+app.include_router(projects.router)
 
 
 class HealthResponse(BaseModel):

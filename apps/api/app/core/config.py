@@ -10,6 +10,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _API_ROOT = Path(__file__).resolve().parents[2]
 
+# 로컬·테스트 전용 세션 서명 키. 실제 비밀이 아니며 배포에서는 반드시 덮어쓴다.
+DEV_SESSION_SECRET = "dev-only-insecure-session-secret"
+
 
 class Settings(BaseSettings):
     """CertPilot API 런타임 설정.
@@ -37,12 +40,28 @@ class Settings(BaseSettings):
     # LLM (없어도 부팅은 되어야 한다)
     anthropic_api_key: str | None = None
 
+    # 세션 쿠키 서명 키. 운영에서는 반드시 `.env`/시크릿 매니저의 값으로 덮어쓴다.
+    # 여기 기본값은 로컬·테스트 전용 더미이며 실제 비밀이 아니다.
+    session_secret: str = DEV_SESSION_SECRET
+    session_cookie_name: str = "certpilot_session"
+    session_max_age_seconds: int = 60 * 60 * 12
+    # 로컬 개발은 http 라 False. 운영 배포에서는 True 로 덮어쓴다.
+    session_cookie_secure: bool = False
+
     @field_validator("anthropic_api_key", mode="after")
     @classmethod
     def _empty_to_none(cls, value: str | None) -> str | None:
         """`.env` 에 `ANTHROPIC_API_KEY=` 로 비워 둔 경우도 미설정으로 본다."""
         if value is None or not value.strip():
             return None
+        return value
+
+    @field_validator("session_secret", mode="after")
+    @classmethod
+    def _fallback_session_secret(cls, value: str) -> str:
+        """`.env` 에 `SESSION_SECRET=` 로 비워 두면 개발용 기본값을 쓴다."""
+        if not value.strip():
+            return DEV_SESSION_SECRET
         return value
 
 
