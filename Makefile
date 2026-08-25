@@ -50,8 +50,14 @@ check-web: ## web 검사 (eslint + tsc)
 kb: ## 안내서 PDF에서 data/criteria/criteria.json 재생성
 	cd $(API_DIR) && uv run python ../../scripts/kb_build.py
 
-demo: ## 데모 시드 데이터 적재 (미구현)
-	@echo "not yet"
+demo: ## 데모 시드 적재 (데모핀테크 — PRD §4 3분 시나리오 재현)
+	@echo "데모 시드를 적재합니다. 인프라(postgres·minio)가 떠 있어야 합니다 — 'make dev'."
+	@echo "기존 '데모핀테크' 데이터는 지워지고 다시 만들어집니다."
+	@echo ""
+	@echo "== 스키마 최신화 (alembic upgrade head) =="
+	cd $(API_DIR) && uv run alembic upgrade head
+	@echo "== 시드 적재 =="
+	cd $(API_DIR) && uv run python ../../scripts/seed_demo.py
 
 eval: ## 골든셋 평가 실행 (미구현)
 	@echo "not yet"
