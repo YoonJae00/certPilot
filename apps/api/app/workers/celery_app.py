@@ -19,7 +19,7 @@ celery_app = Celery(
     "certpilot",
     broker=_settings.redis_url,
     backend=_settings.redis_url,
-    include=["app.workers.assess", "app.workers.ingest"],
+    include=["app.workers.assess", "app.workers.collect", "app.workers.ingest"],
 )
 
 celery_app.conf.update(

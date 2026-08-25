@@ -1,0 +1,115 @@
+# AWS 증적 점검 ↔ ISMS-P 인증기준 항목 매핑 (PRD §9 표)
+#
+# 코드에 매핑을 하드코딩하지 않는다. 안내서가 개정되면 이 파일만 고친다.
+# `criterion_codes` 는 `data/criteria/criteria.json` 에 실제로 있는 코드여야 한다
+# (tests/test_connectors.py 가 대조한다).
+#
+# 필드
+#   check_id        : 증적(check_id) 식별자. 코드의 점검 함수와 1:1 로 연결된다.
+#   title           : 화면 표시명(한국어).
+#   source          : evidence.source 값. 서비스 단위로 묶는다.
+#   criterion_codes : 매핑되는 인증기준 항목 코드.
+#   pass_condition  : pass 판정 조건 설명(한국어). 화면·리포트에 그대로 쓴다.
+#   metrics         : 변경 감지(drift) 알림에 쓰는 payload 키 → 한국어 라벨.
+#                     목록 값은 개수로, 참·거짓은 "예/아니오" 로 표시한다.
+
+version: "2023"
+
+checks:
+  - check_id: aws.iam.root_mfa
+    title: 루트 계정 MFA
+    source: aws.iam
+    criterion_codes: ["2.5.3"]
+    pass_condition: 루트 계정에 MFA 가 설정돼 있어야 한다(AccountMFAEnabled=1).
+    metrics:
+      account_mfa_enabled: 루트 MFA 설정
+
+  - check_id: aws.iam.user_mfa
+    title: IAM 사용자 MFA
+    source: aws.iam
+    criterion_codes: ["2.5.3"]
+    pass_condition: 콘솔 로그인이 가능한 IAM 사용자 전원(100%)에게 MFA 가 설정돼 있어야 한다.
+    metrics:
+      console_users: 콘솔 사용자
+      mfa_enabled: MFA 설정 사용자
+      missing: MFA 미설정 사용자
+
+  - check_id: aws.iam.password_policy
+    title: 비밀번호 정책
+    source: aws.iam
+    criterion_codes: ["2.5.4"]
+    pass_condition: >-
+      계정 비밀번호 정책이 있고 최소 길이 8자 이상, 영대문자·소문자·숫자·특수문자를
+      모두 요구하며, 만료 주기(MaxPasswordAge)가 설정돼 있어야 한다.
+    metrics:
+      policy_exists: 정책 존재
+      minimum_password_length: 최소 길이
+      complexity_required: 복잡도 요구
+      max_password_age: 만료 주기(일)
+
+  - check_id: aws.iam.key_age
+    title: 액세스 키 사용 기간
+    source: aws.iam
+    criterion_codes: ["2.5.1", "2.5.6"]
+    pass_condition: 활성 액세스 키 중 생성 후 90일이 지난 키가 0개여야 한다.
+    metrics:
+      active_keys: 활성 액세스 키
+      expired_keys: 90일 초과 키
+
+  - check_id: aws.iam.admin_users
+    title: AdministratorAccess 부여 사용자
+    source: aws.iam
+    criterion_codes: ["2.5.5"]
+    pass_condition: >-
+      AdministratorAccess 정책이 직접 붙은 IAM 사용자가 0명이면 pass,
+      1~3명이면 warn(특수 권한 대장으로 관리 확인 필요), 3명을 초과하면 fail 이다.
+    metrics:
+      admin_user_count: 관리자 권한 사용자
+
+  - check_id: aws.cloudtrail.enabled
+    title: CloudTrail 전 리전 추적
+    source: aws.cloudtrail
+    criterion_codes: ["2.9.4"]
+    pass_condition: 전 리전(IsMultiRegionTrail) + 로그 파일 무결성 검증(LogFileValidationEnabled) 트레일이 1개 이상 있어야 한다.
+    metrics:
+      trails: 트레일 수
+      compliant_trails: 조건 충족 트레일
+
+  - check_id: aws.s3.public_block
+    title: S3 퍼블릭 액세스 차단
+    source: aws.s3
+    criterion_codes: ["2.10.2", "2.6.2"]
+    pass_condition: 모든 S3 버킷에 퍼블릭 액세스 차단 4개 옵션이 모두 켜져 있어야 한다.
+    metrics:
+      buckets: 버킷 수
+      blocked: 차단 적용 버킷
+      unblocked: 차단 미적용 버킷
+
+  - check_id: aws.s3.encryption
+    title: S3 버킷 기본 암호화
+    source: aws.s3
+    criterion_codes: ["2.7.1"]
+    pass_condition: 모든 S3 버킷에 기본 서버 측 암호화가 설정돼 있어야 한다.
+    metrics:
+      buckets: 버킷 수
+      encrypted: 암호화 적용 버킷
+      unencrypted: 암호화 미적용 버킷
+
+  - check_id: aws.rds.encryption
+    title: RDS 저장 암호화·자동 백업
+    source: aws.rds
+    criterion_codes: ["2.7.1", "2.9.3"]
+    pass_condition: 모든 RDS 인스턴스가 저장 암호화(StorageEncrypted)돼 있고 자동 백업 보관 기간이 7일 이상이어야 한다.
+    metrics:
+      instances: RDS 인스턴스
+      compliant: 조건 충족 인스턴스
+      violations: 조건 미충족 인스턴스
+
+  - check_id: aws.ec2.open_sg
+    title: 보안 그룹 전체 개방 규칙
+    source: aws.ec2
+    criterion_codes: ["2.6.1"]
+    pass_condition: 0.0.0.0/0(또는 ::/0) 에서 22·3389·3306·5432 포트로 들어오는 인바운드 규칙이 0개여야 한다.
+    metrics:
+      security_groups: 보안 그룹 수
+      open_rules: 전체 개방 규칙

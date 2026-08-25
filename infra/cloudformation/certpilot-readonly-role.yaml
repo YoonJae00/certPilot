@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# CertPilot 증적 수집용 읽기 전용 역할 (PRD §7 F5 · §10)
+#
+# 고객 AWS 계정에서 이 스택을 만들면 CertPilot 이 AssumeRole 로 증적을 수집할 수 있다.
+# 부여하는 권한은 조회(Describe/List/Get)뿐이며, 쓰기·삭제 권한은 요청하지 않는다.
+# 신뢰 정책에 외부 ID(External ID) 조건이 있어, 외부 ID 를 모르면 다른 계정이
+# CertPilot 을 사칭해도 역할을 맡을 수 없다(혼동된 대리인 문제 방지).
+#
+# 배포:
+#   aws cloudformation deploy \
+#     --template-file infra/cloudformation/certpilot-readonly-role.yaml \
+#     --stack-name certpilot-readonly \
+#     --capabilities CAPABILITY_NAMED_IAM \
+#     --parameter-overrides CertPilotAccountId=<CertPilot 계정 ID> ExternalId=<발급받은 외부 ID>
+#
+# 배포 후 출력(Outputs)의 RoleArn 과 외부 ID 를 CertPilot 커넥터 등록 화면에 입력한다.
+
+Description: CertPilot 이 ISMS-P 증적을 수집하기 위한 읽기 전용 IAM 역할
+
+Parameters:
+  CertPilotAccountId:
+    Type: String
+    Description: 역할을 맡을 CertPilot 서비스의 AWS 계정 ID (12자리 숫자)
+    AllowedPattern: "^[0-9]{12}$"
+    ConstraintDescription: 12자리 숫자여야 한다
+
+  ExternalId:
+    Type: String
+    Description: CertPilot 이 커넥터별로 발급한 외부 ID. 다른 곳에 공유하지 않는다
+    NoEcho: true
+    MinLength: 16
+    MaxLength: 128
+    AllowedPattern: "^[A-Za-z0-9+=,.@:/_-]{16,128}$"
+    ConstraintDescription: 16자 이상 128자 이하의 외부 ID 여야 한다
+
+  RoleName:
+    Type: String
+    Description: 만들 역할 이름. 기본값을 그대로 쓰는 것을 권장한다
+    Default: CertPilotReadOnly
+
+Resources:
+  CertPilotReadOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: CertPilot 증적 수집용 읽기 전용 역할 (쓰기 권한 없음)
+      # 수집 잡 1회분이면 충분하다. 세션을 길게 열어 두지 않는다.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCertPilotAssumeRoleWithExternalId
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${CertPilotAccountId}:root"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                # 외부 ID 가 일치할 때만 역할을 맡을 수 있다.
+                sts:ExternalId: !Ref ExternalId
+      ManagedPolicyArns:
+        # AWS 관리형 SecurityAudit — 보안 설정 조회 전용 정책이다.
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/SecurityAudit"
+      Policies:
+        - PolicyName: CertPilotCollectReadOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # SecurityAudit 에 이미 대부분 포함돼 있지만, 점검 10개(PRD §9)가
+              # 실제로 쓰는 호출을 명시해 권한 누락으로 unknown 이 나는 것을 막는다.
+              - Sid: CertPilotEvidenceReadOnly
+                Effect: Allow
+                Action:
+                  # 2.5.x 계정·권한
+                  - iam:GetAccountSummary
+                  - iam:GetAccountPasswordPolicy
+                  - iam:ListUsers
+                  - iam:GetLoginProfile
+                  - iam:ListMFADevices
+                  - iam:ListAccessKeys
+                  - iam:ListAttachedUserPolicies
+                  # 2.9.4 로그
+                  - cloudtrail:DescribeTrails
+                  # 2.10.2 / 2.6.2 / 2.7.1 스토리지
+                  - s3:ListAllMyBuckets
+                  - s3:GetBucketPublicAccessBlock
+                  - s3:GetEncryptionConfiguration
+                  - s3:GetBucketLocation
+                  # 2.7.1 / 2.9.3 데이터베이스
+                  - rds:DescribeDBInstances
+                  # 2.6.1 네트워크
+                  - ec2:DescribeSecurityGroups
+                Resource: "*"
+
+Outputs:
+  RoleArn:
+    Description: CertPilot 커넥터 등록 화면에 입력할 역할 ARN
+    Value: !GetAtt CertPilotReadOnlyRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-RoleArn"
+
+  TrustedAccountId:
+    Description: 이 역할을 맡을 수 있는 CertPilot 계정 ID
+    Value: !Ref CertPilotAccountId
+
+  Notice:
+    Description: 안내
+    Value: 이 역할에는 쓰기 권한이 없다. 외부 ID 는 커넥터 등록 화면에서만 사용하고 외부에 공유하지 않는다.

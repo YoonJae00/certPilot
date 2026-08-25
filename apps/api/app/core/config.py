@@ -48,7 +48,11 @@ class Settings(BaseSettings):
     # 로컬 개발은 http 라 False. 운영 배포에서는 True 로 덮어쓴다.
     session_cookie_secure: bool = False
 
-    @field_validator("anthropic_api_key", mode="after")
+    # 커넥터 자격증명 암호화 키(Fernet, base64 32바이트). 비워 두면 개발용으로
+    # `session_secret` 에서 파생한 키를 쓰고 경고 로그를 남긴다(PRD §10).
+    connector_encryption_key: str | None = None
+
+    @field_validator("anthropic_api_key", "connector_encryption_key", mode="after")
     @classmethod
     def _empty_to_none(cls, value: str | None) -> str | None:
         """`.env` 에 `ANTHROPIC_API_KEY=` 로 비워 둔 경우도 미설정으로 본다."""
