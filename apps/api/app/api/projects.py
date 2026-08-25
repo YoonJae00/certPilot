@@ -12,7 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.core.rbac import CurrentUser, assert_org_access, require_roles, resolve_org_scope
+from app.core.rbac import (
+    CurrentUser,
+    assert_org_access,
+    load_scoped_project,
+    require_roles,
+    resolve_org_scope,
+)
 from app.models import Project, User, UserRole
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate
 from app.services.audit import record_audit
@@ -33,20 +39,8 @@ def _get_project_or_404(db: Session, project_id: uuid.UUID, org_id: uuid.UUID) -
 
 
 def _load_scoped_project(db: Session, user: User, project_id: uuid.UUID) -> Project:
-    """현재 사용자가 접근 가능한 프로젝트만 읽는다.
-
-    운영자는 프로젝트의 org_id 를 그대로 쓰고, 조직 사용자는 자기 조직으로 제한한다.
-    """
-    if user.role is UserRole.OPERATOR:
-        project = db.execute(
-            select(Project).where(Project.id == project_id)
-        ).scalar_one_or_none()
-        if project is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="리소스를 찾을 수 없다")
-        return project
-
-    org_id = resolve_org_scope(user, None)
-    return _get_project_or_404(db, project_id, org_id)
+    """현재 사용자가 접근 가능한 프로젝트만 읽는다(구현은 rbac 에 하나만 둔다)."""
+    return load_scoped_project(db, user, project_id)
 
 
 @router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)

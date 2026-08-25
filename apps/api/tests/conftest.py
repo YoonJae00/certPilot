@@ -24,6 +24,11 @@ from app.core.db import Base, get_engine, get_session_factory
 from app.core.security import hash_password
 from app.main import app
 from app.models import CertType, Organization, Project, User, UserRole
+from app.services.storage import ObjectStorage, get_storage
+
+# moto 는 기본적으로 AWS 도메인만 가로챈다. MinIO 처럼 커스텀 엔드포인트를 쓰면
+# 이 환경 변수로 알려 줘야 한다. moto 를 임포트하기 전에 설정해야 하므로 여기 둔다.
+os.environ.setdefault("MOTO_S3_CUSTOM_ENDPOINTS", Settings().s3_endpoint)
 
 API_ROOT = Path(__file__).resolve().parents[1]
 
@@ -112,6 +117,21 @@ def db() -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+@pytest.fixture
+def storage() -> Iterator[ObjectStorage]:
+    """moto 로 가짜 S3 를 띄운다. 실제 MinIO 에는 아무것도 남지 않는다."""
+    from moto import mock_aws
+
+    with mock_aws():
+        get_storage.cache_clear()
+        bucket = get_storage()
+        bucket.ensure_bucket()
+        try:
+            yield bucket
+        finally:
+            get_storage.cache_clear()
 
 
 @pytest.fixture

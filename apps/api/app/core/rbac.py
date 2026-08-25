@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.security import read_session_token
-from app.models import User, UserRole
+from app.models import Project, User, UserRole
 
 # 리소스 존재 여부를 흘리지 않기 위해, 권한이 없는 조직 리소스는 404 로 답한다.
 _NOT_FOUND = HTTPException(status.HTTP_404_NOT_FOUND, detail="리소스를 찾을 수 없다")
@@ -108,3 +108,24 @@ def resolve_org_scope(user: User, requested_org_id: uuid.UUID | None) -> uuid.UU
     if requested_org_id is not None and requested_org_id != user.org_id:
         raise _NOT_FOUND
     return user.org_id
+
+
+def load_scoped_project(db: Session, user: User, project_id: uuid.UUID) -> Project:
+    """현재 사용자가 접근 가능한 프로젝트만 읽는다. 아니면 404.
+
+    프로젝트 하위 리소스(문서·청크·모의심사 등) 라우터는 전부 이 함수를 먼저 거쳐
+    org 스코프를 확정한다. 다른 조직의 프로젝트는 존재 여부를 흘리지 않도록 404 다.
+    """
+    if user.role is UserRole.OPERATOR:
+        project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
+        if project is None:
+            raise _NOT_FOUND
+        return project
+
+    org_id = resolve_org_scope(user, None)
+    project = db.execute(
+        select(Project).where(Project.id == project_id, Project.org_id == org_id)
+    ).scalar_one_or_none()
+    if project is None:
+        raise _NOT_FOUND
+    return project
