@@ -1,28 +1,17 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+
+import { createPendingDraft, loginAsReviewer } from "./helpers";
 
 /**
  * "검수 큐 → 편집 → 승인" e2e 시나리오 (PRD §7 F6, 부록 B Task 9 완료 조건).
  *
  * 실행 전제:
- *  - 백엔드가 http://localhost:8000 에서 동작한다.
- *  - 아래 심사원 계정이 존재한다(기본값은 API 테스트 픽스처의 reviewer 계정).
- *  - 검수 큐에 대기 중인 초안이 최소 1건 있다. 없으면 조직 관리자가 초안을 만들어야 하므로
- *    이 시나리오는 스킵한다(`make demo` 시드가 초안을 만들어 둔다).
+ *  - 백엔드가 http://localhost:8000 에서 동작하고 데모 시드(`make demo`)가 적재돼 있다.
+ *  - 심사원 계정은 E2E_REVIEWER_EMAIL / E2E_REVIEWER_PASSWORD 로 덮어쓸 수 있다.
  *
- * 이번 태스크에서는 시나리오만 작성하고 실행하지 않는다.
+ * 승인·반려는 검수 과제를 소비하므로, 결정이 필요한 시나리오는 API 로 초안을 1건씩
+ * 새로 만들어 자기 과제를 준비한다(시드가 만든 과제 1건에 기대지 않는다).
  */
-const REVIEWER_EMAIL = process.env.E2E_REVIEWER_EMAIL ?? "reviewer@example.com";
-const REVIEWER_PASSWORD =
-  process.env.E2E_REVIEWER_PASSWORD ?? "fixture-password-1234";
-
-async function loginAsReviewer(page: Page): Promise<void> {
-  await page.goto("/login");
-  await page.getByLabel("이메일").fill(REVIEWER_EMAIL);
-  await page.getByLabel("비밀번호").fill(REVIEWER_PASSWORD);
-  await page.getByRole("button", { name: "로그인" }).click();
-  // 로그인 후 조직 화면으로 가더라도 헤더 가드가 검수 큐로 되돌린다.
-  await page.waitForURL("**/review");
-}
 
 test.describe("검수 워크플로", () => {
   test.describe.configure({ mode: "serial" });
@@ -45,19 +34,19 @@ test.describe("검수 워크플로", () => {
     await expect(page.getByRole("heading", { name: "검수 큐", level: 1 })).toBeVisible();
   });
 
-  test("초안을 열어 한 칸을 고치고 승인한다", async ({ page }) => {
+  test("초안을 열어 한 칸을 고치고 승인한다", async ({ page, request }) => {
+    // 이 시나리오가 승인할 과제를 직접 만든다(큐에서 가장 위에 올라온다).
+    await createPendingDraft(request);
     await loginAsReviewer(page);
 
-    const rows = page.locator("tbody tr");
-    if ((await rows.count()) === 0) {
-      test.skip(true, "검수 대기 중인 초안이 없다. 데모 시드를 먼저 실행한다.");
-    }
-
     // 1) 큐에서 첫 과제를 연다. 여는 순간 나에게 배정된다.
+    const rows = page.locator("tbody tr");
+    await expect(rows.first()).toBeVisible({ timeout: 30_000 });
     await rows.first().click();
     await page.waitForURL(/\/review\/[^/]+$/);
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.getByText(/확인 필요/)).toBeVisible();
+    // 확인 필요 뱃지와 하단 고정 바 두 곳에 같은 문구가 나온다.
+    await expect(page.getByText(/확인 필요/).first()).toBeVisible();
 
     // 2) 첫 편집 칸을 클릭해 입력으로 바꾸고 값을 채운다.
     //    운영명세서는 "… 운영 현황" 버튼, 정책 초안은 "… 본문" textarea 다.
@@ -95,17 +84,16 @@ test.describe("검수 워크플로", () => {
     ).toBeVisible();
   });
 
-  test("반려에는 사유가 필요하다", async ({ page }) => {
+  test("반려에는 사유가 필요하다", async ({ page, request }) => {
+    // 앞 시나리오가 과제를 승인해 버리므로 반려할 과제도 직접 만든다.
+    await createPendingDraft(request);
     await loginAsReviewer(page);
 
     const pendingRow = page
       .locator("tbody tr")
       .filter({ hasText: "검수 대기" })
       .first();
-    if ((await pendingRow.count()) === 0) {
-      test.skip(true, "검수 대기 중인 초안이 없다. 데모 시드를 먼저 실행한다.");
-    }
-
+    await expect(pendingRow).toBeVisible({ timeout: 30_000 });
     await pendingRow.click();
     await page.waitForURL(/\/review\/[^/]+$/);
 

@@ -1,0 +1,30 @@
+# CertPilot 데모 서버 crontab 예시.
+#
+# 등록:
+#   crontab -e            # 아래 내용을 붙여 넣는다
+#   crontab -l            # 확인
+#
+# 또는 파일째로:
+#   crontab /srv/certpilot/infra/deploy/crontab.example
+#
+# 주의
+#   - cron 은 로그인 셸이 아니라 PATH 가 짧다. 아래처럼 직접 지정한다.
+#   - 시간은 서버 로컬 타임존을 따른다. `timedatectl set-timezone Asia/Seoul` 로
+#     맞춰 두면 아래 시각이 KST 가 된다.
+#   - AWS 증적 수집(일 1회 새벽 3시)은 cron 이 아니라 Celery beat 가 돌린다
+#     (app/workers/collect.py). 여기 넣지 않는다.
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+MAILTO=""
+
+# 매일 04:10 — DB 백업을 S3 에 올리고 30일 초과분을 지운다.
+# 로그는 /var/log/certpilot/ 에 쌓는다(디렉터리를 미리 만들고 소유권을 준다).
+10 4 * * * /srv/certpilot/infra/deploy/backup.sh >> /var/log/certpilot/backup.log 2>&1
+
+# 매주 일요일 04:40 — 쓰지 않는 이미지·볼륨을 정리한다(디스크 여유 확보).
+40 4 * * 0 /usr/bin/docker system prune -af --filter "until=168h" >> /var/log/certpilot/prune.log 2>&1
+
+# 매일 05:00 — 백업 로그가 300줄을 넘으면 잘라 낸다(간이 로테이션).
+# 운영이라면 logrotate 를 쓴다.
+0 5 * * * /usr/bin/tail -n 300 /var/log/certpilot/backup.log > /var/log/certpilot/backup.log.tmp && /bin/mv /var/log/certpilot/backup.log.tmp /var/log/certpilot/backup.log

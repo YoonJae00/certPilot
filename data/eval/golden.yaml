@@ -1,0 +1,201 @@
+# CertPilot 모의심사 골든셋 (PRD §8 "평가", 부록 B Task 12)
+#
+# ⚠️ 초기 골든셋은 데모 시드(데모핀테크)의 사실관계에서 유도한 값이며,
+#    **심사원·보안 전문가 검증 전**이다(PRD §14 오픈 이슈 4 "골든셋 20개 항목
+#    판정에 참여 가능한지"). 여기 적힌 expected_status 는 아직 정답이 아니라
+#    "우리가 데모 데이터에서 읽어낸 기대값"이다. 자문을 받으면 그대로 교체한다.
+#
+# 인증기준 본문은 여기에 적지 않는다. 코드는 data/criteria/criteria.json 에 실제로
+# 있는 것만 쓰고(테스트가 대조한다), expert_note 에는 판정 근거 메모만 짧게 남긴다.
+# 항목 본문·확인사항을 옮겨 적는 것은 CLAUDE.md 절대 규칙 1 위반이다.
+#
+# 필드
+#   criterion_code  : criteria.json 의 항목 코드
+#   project_fixture : 대조할 프로젝트 픽스처. 현재는 "demo"(데모핀테크 시드) 하나뿐
+#   expected_status : met / partial / unmet / unknown
+#   expert_note     : 데모 시드의 어떤 사실에서 그 기대값이 나왔는지
+#
+# 기대값을 정한 기준(러너가 아니라 사람이 적용한 규칙이다)
+#   1. 매핑된 클라우드 점검이 fail  → unmet   (규칙이 LLM 을 이긴다, PRD §8 원칙 2)
+#   2. 점검 pass + 문서 근거 충분   → met
+#   3. 점검 pass·warn 인데 문서 근거가 부족하거나 이행 기록이 일부만 있음 → partial
+#   4. 정책·절차는 있으나 그 정책이 요구하는 이행 기록이 통째로 없음 → unmet
+#   5. 12개 샘플 문서와 10개 점검 어디에도 근거가 없음 → unknown (판단불가)
+#
+# 분포: unmet 8 · met 6 · partial 3 · unknown 3 = 20
+
+version: "0.1"
+
+note: >-
+  초기 골든셋은 데모 시드 기준 유도값이며, 심사원·보안 전문가 검증 전이다
+  (PRD 오픈 이슈 4). 대조 대상은 `make demo` 가 만든 데모핀테크 프로젝트의 최신
+  완료 모의심사다. 시드가 바뀌면 기대값도 다시 유도해야 한다.
+
+cases:
+  # ---------------------------------------------------------------------
+  # A. 클라우드 점검이 fail 이라 규칙만으로 결정되는 항목 (PRD §9 매핑)
+  # ---------------------------------------------------------------------
+  - criterion_code: "2.5.3"
+    project_fixture: "demo"
+    expected_status: "unmet"
+    expert_note: >-
+      aws.iam.user_mfa 점검이 fail 이다(콘솔 사용자 7명 중 MFA 설정 3명, 미설정 4명).
+      루트 MFA(aws.iam.root_mfa)는 pass 지만 사용자 인증 수단이 전원에게 적용되지
+      않았으므로 미충족이다. PRD §4 1:40 장면의 시연 항목.
+
+  - criterion_code: "2.5.1"
+    project_fixture: "demo"
+    expected_status: "unmet"
+    expert_note: >-
+      aws.iam.key_age 점검이 fail 이다(활성 액세스 키 9개 중 90일 초과 2개:
+      demo-dev-01 142일, demo-ops-01 117일). 계정·인증수단의 생명주기 관리가
+      이행되지 않은 상태다.
+
+  - criterion_code: "2.5.6"
+    project_fixture: "demo"
+    expected_status: "unmet"
+    expert_note: >-
+      aws.iam.key_age fail 에 더해, 접근권한 검토 이력(07)에서 2024년 3·4분기
+      검토가 "수행되지 않음"으로 비어 있고 2024Q2 AWS IAM 검토에서 확인한
+      장기 미사용 키 2건도 미조치로 남아 있다.
+
+  - criterion_code: "2.10.2"
+    project_fixture: "demo"
+    expected_status: "unmet"
+    expert_note: >-
+      최신 스냅샷의 aws.s3.public_block 점검이 fail 이다(버킷 6개 중 1개
+      demo-fintech-public-assets 의 퍼블릭 액세스 차단 해제). 직전 스냅샷은 pass
+      였으므로 변경 감지 알림이 함께 떠 있다.
+
+  - criterion_code: "2.6.2"
+    project_fixture: "demo"
+    expected_status: "unmet"
+    expert_note: >-
+      2.10.2 와 같은 aws.s3.public_block fail 이 매핑된 항목이다(data/rules/aws_rules.yaml).
+      정보시스템(스토리지)에 대한 접근 통제가 최신 스냅샷 기준으로 무너져 있다.
+
+  # ---------------------------------------------------------------------
+  # B. 점검은 pass·warn 이고 문서 근거로 갈리는 항목
+  # ---------------------------------------------------------------------
+  - criterion_code: "2.5.4"
+    project_fixture: "demo"
+    expected_status: "met"
+    expert_note: >-
+      aws.iam.password_policy 가 pass 다(정책 존재, 최소 길이 10자, 복잡도 요구,
+      만료 주기 90일). 정보보호 정책서(01) 제10조도 영문·숫자·특수문자 조합 10자리
+      이상·분기 변경을 규정해 문서와 설정이 일치한다.
+
+  - criterion_code: "2.9.4"
+    project_fixture: "demo"
+    expected_status: "met"
+    expert_note: >-
+      aws.cloudtrail.enabled 가 pass 다(전 리전 트레일 1개 + 로그 파일 무결성 검증).
+      정보보호 정책서(01) 제15조도 접속기록 최소 1년 보관을 규정한다.
+
+  - criterion_code: "2.7.1"
+    project_fixture: "demo"
+    expected_status: "met"
+    expert_note: >-
+      aws.s3.encryption(버킷 6/6 암호화)과 aws.rds.encryption(인스턴스 2/2 저장
+      암호화)이 모두 pass 다. 정보보호 정책서(01) 제12·13조가 전송구간 TLS 1.2 이상과
+      계좌번호·비밀번호 저장 암호화를 규정해 암호정책 문서 근거도 있다.
+
+  - criterion_code: "2.6.1"
+    project_fixture: "demo"
+    expected_status: "partial"
+    expert_note: >-
+      aws.ec2.open_sg 는 pass 다(0.0.0.0/0 → 22·3389·3306·5432 인바운드 0건).
+      다만 정보보호 정책서(01)에 네트워크 영역 분리·접근통제 조항이 없고, 자산
+      목록(03)의 방화벽·VPN 게이트웨이 등재 외에 운영 근거가 없어 부분충족으로 본다.
+
+  - criterion_code: "2.5.5"
+    project_fixture: "demo"
+    expected_status: "partial"
+    expert_note: >-
+      aws.iam.admin_users 는 warn 이다(AdministratorAccess 직접 부여 2명,
+      demo-admin-01·demo-ops-01). 정책서(01) 제9조가 최소권한을 규정하지만 특수 권한
+      대장이나 그 검토 기록이 제출되지 않아 관리 이행을 확인할 수 없다.
+
+  # ---------------------------------------------------------------------
+  # C. 정책·절차는 있으나 그 정책이 요구하는 이행 기록이 없는 항목
+  # ---------------------------------------------------------------------
+  - criterion_code: "2.9.3"
+    project_fixture: "demo"
+    expected_status: "unmet"
+    expert_note: >-
+      백업 정책(10)이 제7조에서 반기 1회 이상 복구 테스트를 요구하지만 수행 기록이
+      전혀 없다(부록 D 10번 문서의 의도). aws.rds.encryption 의 자동 백업 보관 기간은
+      pass 지만, 복구 가능성을 검증한 증적이 없으므로 미충족이다.
+
+  - criterion_code: "1.2.3"
+    project_fixture: "demo"
+    expected_status: "unmet"
+    expert_note: >-
+      위험평가 보고서(04)는 2023년도 것 하나뿐이고, 본문에 "차기 위험평가는 2024년
+      3분기 예정이었으나 수행되지 않았다"고 적혀 있다. 연 1회 이상 수행 요건을
+      충족하는 최신 위험평가 증적이 없다.
+
+  - criterion_code: "2.11.4"
+    project_fixture: "demo"
+    expected_status: "unmet"
+    expert_note: >-
+      침해사고 대응 절차서(12) 제5조가 연 1회 이상 모의훈련을 정하고 있으나,
+      2023년 도상훈련 1회 뒤 2024년 훈련은 계획만 있고 수행되지 않았다.
+
+  # ---------------------------------------------------------------------
+  # D. 문서 근거가 뚜렷해 충족·부분충족이 명확한 항목
+  # ---------------------------------------------------------------------
+  - criterion_code: "1.1.2"
+    project_fixture: "demo"
+    expected_status: "met"
+    expert_note: >-
+      CISO 지정 공문(02)에 지정 근거·지정 내용(CISO 겸 CPO)·역할과 책임·시행일이
+      모두 있고 전 임직원 수신으로 공지됐다. 정책서(01) 제4조도 같은 내용을 규정한다.
+
+  - criterion_code: "2.11.5"
+    project_fixture: "demo"
+    expected_status: "met"
+    expert_note: >-
+      침해사고 대응 절차서(12)에 사고 등급·대응 조직·탐지/초동/분석/복구/신고·통지/
+      사후조치 절차와 보고 시한이 정의돼 있다. 훈련(2.11.4)과 달리 대응 절차 자체의
+      수립·문서화는 확인된다.
+
+  - criterion_code: "3.5.1"
+    project_fixture: "demo"
+    expected_status: "met"
+    expert_note: >-
+      개인정보 처리방침(05)에 수집 항목·처리 목적·보유 기간·제3자 제공·위탁·정보주체
+      권리와 행사 방법이 모두 기재돼 있고 시행일·개정일이 명시돼 있다.
+
+  - criterion_code: "2.2.4"
+    project_fixture: "demo"
+    expected_status: "partial"
+    expert_note: >-
+      보안 교육 이수 기록(09)에 2024년 전사 교육 1회와 개인정보취급자 교육 2회 실시
+      내역이 있어 계획·수행은 확인된다. 다만 개인정보취급자 2차 교육 미이수자 2명이
+      재교육·대체 이수 없이 남아 있고 수탁사 교육 이행 확인 기록이 없다.
+
+  # ---------------------------------------------------------------------
+  # E. 12개 문서·10개 점검 어디에도 근거가 없어 판단불가여야 하는 항목
+  # ---------------------------------------------------------------------
+  - criterion_code: "2.4.2"
+    project_fixture: "demo"
+    expected_status: "unknown"
+    expert_note: >-
+      물리 보안을 다루는 문서가 시드에 없다. 자산 목록(03)에 "본사 사무실" 위치
+      표기만 있을 뿐 보호구역 출입 통제 절차·출입 기록이 제출되지 않았으므로
+      판정 재료가 없다(D2 판단불가 표시 대상).
+
+  - criterion_code: "2.6.5"
+    project_fixture: "demo"
+    expected_status: "unknown"
+    expert_note: >-
+      무선 네트워크를 언급한 문서가 없고 매핑된 클라우드 점검도 없다. AWS 점검 10개는
+      IAM·CloudTrail·S3·RDS·EC2 보안그룹만 다룬다.
+
+  - criterion_code: "3.1.6"
+    project_fixture: "demo"
+    expected_status: "unknown"
+    expert_note: >-
+      영상정보처리기기(CCTV) 설치·운영을 다루는 문서가 시드에 없다. 개인정보 처리방침
+      (05)에도 영상정보 수집 항목이 없어 해당 여부조차 확인할 수 없다.

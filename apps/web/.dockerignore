@@ -1,0 +1,14 @@
+# 웹 이미지 빌드 컨텍스트(apps/web)에서 제외할 것.
+
+.env
+.env.*
+!.env.example
+
+node_modules/
+.next/
+test-results/
+playwright-report/
+tsconfig.tsbuildinfo
+
+e2e/
+.DS_Store

@@ -59,5 +59,11 @@ demo: ## 데모 시드 적재 (데모핀테크 — PRD §4 3분 시나리오 재
 	@echo "== 시드 적재 =="
 	cd $(API_DIR) && uv run python ../../scripts/seed_demo.py
 
-eval: ## 골든셋 평가 실행 (미구현)
-	@echo "not yet"
+eval: ## 골든셋 평가 실행 → docs/eval/YYYY-MM-DD.md (PRD §8)
+	@echo "골든셋(data/eval/golden.yaml)과 데모 프로젝트의 최신 모의심사를 대조합니다."
+	@echo "데모 시드가 없으면 'make demo' 를 먼저 실행하거나 'make eval SEED=1' 을 쓰세요."
+	@echo ""
+	@echo "== 스키마 최신화 (alembic upgrade head) =="
+	cd $(API_DIR) && uv run alembic upgrade head
+	@echo "== 평가 실행 =="
+	cd $(API_DIR) && uv run python ../../scripts/eval_run.py $(if $(SEED),--seed,) $(EVAL_ARGS)

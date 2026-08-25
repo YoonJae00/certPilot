@@ -2,6 +2,8 @@
 .env
 .env.*
 !.env.example
+# 배포용 예시 파일(값은 전부 CHANGE_ME 다). 실제 .env.prod 는 위 규칙이 계속 막는다.
+!.env.prod.example
 
 # 공식 안내서 원본 (PRD 부록 C: gitignore 대상)
 data/raw/

@@ -1,0 +1,34 @@
+# API 이미지 빌드 컨텍스트(리포지토리 루트)에서 제외할 것.
+# 비밀 값과 무거운 산출물이 이미지 레이어에 들어가지 않게 한다.
+
+# 비밀
+.env
+.env.*
+!.env.example
+
+# 안내서 원본 PDF(수백 MB, 이미지에 필요 없다)
+data/raw/
+
+# 프런트엔드 (web 이미지는 apps/web 컨텍스트로 따로 빌드한다)
+apps/web/
+
+# 파이썬 산출물
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.pytest_cache/
+apps/api/tests/
+
+# 개발 도구·문서
+.git/
+.github/
+.orca/
+docs/
+infra/
+*.md
+!apps/api/README.md
+
+# OS
+.DS_Store

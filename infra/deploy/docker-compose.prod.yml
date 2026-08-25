@@ -1,0 +1,149 @@
+# CertPilot 데모 배포용 compose (EC2 1대, PRD §5 "AWS EC2 1대 + RDS(데모)").
+#
+# 로컬 개발용 `docker-compose.yml` 과 다른 점
+#   - api·web 을 컨테이너로 띄운다(로컬은 호스트에서 `make api`/`make web`).
+#   - MinIO 가 없다. 오브젝트 스토리지는 **실제 S3** 를 쓴다(.env.prod 의 S3_*).
+#   - DB 는 기본적으로 **RDS** 다. postgres 컨테이너는 `local-db` 프로파일로
+#     묶여 있어 평소에는 뜨지 않는다(RDS 없이 한 대에서 다 돌릴 때만 켠다).
+#
+# 사용:
+#   cd infra/deploy
+#   cp .env.prod.example .env.prod   # 값을 채운다
+#   ./deploy.sh
+#
+# RDS 없이 EC2 한 대에서 전부 돌릴 때:
+#   docker compose -f docker-compose.prod.yml --profile local-db up -d
+
+name: certpilot
+
+x-api-base: &api-base
+  build:
+    # 컨텍스트가 리포 루트여야 data/criteria/criteria.json 이 이미지에 들어간다.
+    context: ../..
+    dockerfile: apps/api/Dockerfile
+  image: certpilot-api:${IMAGE_TAG:-latest}
+  env_file: .env.prod
+  restart: unless-stopped
+  # 컨테이너 안에서 스택트레이스가 로그로 바로 나오게 한다.
+  environment:
+    PYTHONUNBUFFERED: "1"
+
+services:
+  api:
+    <<: *api-base
+    container_name: certpilot-api
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --proxy-headers
+      # 리버스 프록시(Nginx/ALB) 뒤에 둔다. 신뢰할 프록시는 배포 환경에 맞춘다.
+      - --forwarded-allow-ips
+      - "*"
+    ports:
+      # 리버스 프록시를 앞에 두므로 루프백에만 노출한다.
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: *api-base
+    container_name: certpilot-worker
+    # 모의심사·인제스트·수집 잡을 처리한다. 동시 실행 수는 인스턴스 크기에 맞춘다.
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app:celery_app
+      - worker
+      - -l
+      - info
+      - --concurrency
+      - "${CELERY_CONCURRENCY:-2}"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        ["CMD-SHELL", "celery -A app.workers.celery_app:celery_app inspect ping -d celery@$$HOSTNAME"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  beat:
+    <<: *api-base
+    container_name: certpilot-beat
+    # 일 1회 AWS 증적 수집 스케줄(app/workers/collect.py 의 beat_schedule).
+    # 스케줄 상태 파일은 컨테이너가 재시작돼도 남도록 볼륨에 둔다.
+    command:
+      - celery
+      - -A
+      - app.workers.celery_app:celery_app
+      - beat
+      - -l
+      - info
+      - --schedule
+      - /var/lib/celery/beat-schedule
+    volumes:
+      - beat_state:/var/lib/celery
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../../apps/web
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* 는 빌드 시점에 번들에 박힌다. 주소가 바뀌면 재빌드가 필요하다.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: certpilot-web:${IMAGE_TAG:-latest}
+    container_name: certpilot-web
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api
+
+  redis:
+    image: redis:7
+    container_name: certpilot-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # RDS 를 쓰지 않을 때만 켠다: `--profile local-db`.
+  # 이 경우 .env.prod 의 DATABASE_URL 호스트를 `postgres` 로 바꾼다.
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: certpilot-postgres
+    profiles: ["local-db"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-certpilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 를 .env.prod 에 설정한다}
+      POSTGRES_DB: ${POSTGRES_DB:-certpilot}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-certpilot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  redis_data:
+  postgres_data:
+  beat_state:
