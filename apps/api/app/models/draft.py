@@ -43,7 +43,12 @@ class Draft(Base):
 
 
 class ReviewTask(Base):
-    """검수 과제. reviewer 는 이 레코드를 통해서만 조직 데이터에 접근한다."""
+    """검수 과제. reviewer 는 이 레코드를 통해서만 조직 데이터에 접근한다.
+
+    초안이 생성되면 **미배정(reviewer_id = NULL)** 과제가 하나 만들어져 공용 검수 큐에
+    올라가고, 심사원이 과제를 열어 보는 순간 그 사람에게 배정된다(claim). 서비스에
+    심사원이 여러 명일 때 누구에게 보낼지 시스템이 미리 정할 수 없기 때문이다.
+    """
 
     __tablename__ = "review_tasks"
 
@@ -51,8 +56,9 @@ class ReviewTask(Base):
     draft_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("drafts.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    reviewer_id: Mapped[uuid.UUID] = mapped_column(
-        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    # NULL = 아직 아무도 잡지 않은 과제.
+    reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
     )
     status: Mapped[ReviewTaskStatus] = mapped_column(
         enum_column(ReviewTaskStatus, "review_task_status"),

@@ -37,6 +37,7 @@ from app.services.draft_docx import (
 )
 from app.services.draft_policy import build_policy_content
 from app.services.draft_sow import build_sow_content
+from app.services.review import ensure_review_task
 from app.services.storage import StorageError
 
 router = APIRouter(prefix="/projects/{project_id}/drafts", tags=["drafts"])
@@ -146,6 +147,10 @@ def create_draft(
         created_by=user.id,
     )
     db.add(draft)
+    # 생성과 동시에 미배정 검수 과제를 큐에 올린다(PRD §7 F6). 심사원이 열어 볼 때
+    # 배정되므로 여기서 담당자를 정하지 않는다. 반려 후 재생성하면 새 초안이므로
+    # 새 과제가 하나 더 생기고, 같은 초안에 대기 과제가 둘 생기지는 않는다.
+    ensure_review_task(db, draft)
     stats = content.get("stats") if isinstance(content.get("stats"), dict) else {}
     record_audit(
         db,

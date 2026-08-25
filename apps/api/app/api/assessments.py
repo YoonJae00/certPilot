@@ -35,6 +35,7 @@ from app.schemas.assessment import (
     FindingOut,
 )
 from app.services.audit import record_audit
+from app.services.evidence_package import build_evidence_package
 from app.services.report import build_gap_report
 from app.services.scoring import code_sort_key
 from app.workers.assess import enqueue_assessment, start_assessment_thread
@@ -45,8 +46,10 @@ AssessmentRunner = Annotated[User, Depends(require_roles(UserRole.ORG_ADMIN))]
 
 AUDIT_START_ACTION = "assessment.start"
 AUDIT_REPORT_ACTION = "assessment.report_download"
+AUDIT_EVIDENCE_PACKAGE_ACTION = "assessment.evidence_package_download"
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+ZIP_MEDIA_TYPE = "application/zip"
 
 _NOT_FOUND = HTTPException(status.HTTP_404_NOT_FOUND, detail="리소스를 찾을 수 없다")
 
@@ -340,5 +343,45 @@ def download_gap_report(
     return StreamingResponse(
         stream(),
         media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{project_id}/assessments/{assessment_id}/evidence-package.zip")
+def download_evidence_package(
+    project_id: uuid.UUID,
+    assessment_id: uuid.UUID,
+    user: CurrentUser,
+    db: Annotated[Session, Depends(get_db)],
+) -> StreamingResponse:
+    """증적 패키지 ZIP 을 내려준다(PRD §7 F7). 완료된 실행만 만들 수 있다."""
+    project = load_scoped_project(db, user, project_id)
+    assessment = _get_assessment(db, project.id, assessment_id)
+
+    if assessment.status is not AssessmentStatus.DONE:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="완료된 모의심사만 증적 패키지를 만들 수 있다",
+        )
+
+    payload = build_evidence_package(db, project, assessment)
+    record_audit(
+        db,
+        action=AUDIT_EVIDENCE_PACKAGE_ACTION,
+        org_id=project.org_id,
+        user_id=user.id,
+        target=str(assessment.id),
+        meta={"bytes": len(payload)},
+    )
+    db.commit()
+
+    filename = f"certpilot-evidence-package-{assessment.id}.zip"
+
+    def stream() -> Iterator[bytes]:
+        yield payload
+
+    return StreamingResponse(
+        stream(),
+        media_type=ZIP_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

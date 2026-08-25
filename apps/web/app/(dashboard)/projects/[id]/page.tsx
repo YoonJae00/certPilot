@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 
 import { AssessmentTab } from "@/app/(dashboard)/projects/[id]/assessment-tab";
+import { DashboardTab } from "@/app/(dashboard)/projects/[id]/dashboard-tab";
 import { DocumentsTab } from "@/app/(dashboard)/projects/[id]/documents-tab";
 import { ReportTab } from "@/app/(dashboard)/projects/[id]/report-tab";
 import { useAssessments } from "@/app/(dashboard)/projects/[id]/use-assessments";
@@ -29,7 +30,8 @@ export default function ProjectDetailPage() {
   const [project, setProject] = React.useState<Project | null>(null);
   const [error, setError] = React.useState<string | null>(null);
   // 모의심사 탭과 리포트 탭이 같은 실행을 가리키도록 상태를 여기서 들고 있는다.
-  const [tab, setTab] = React.useState("documents");
+  // 기본 탭은 유지 대시보드다(PRD §7 F8 — 들어오자마자 준비도·알림을 본다).
+  const [tab, setTab] = React.useState("dashboard");
   const assessments = useAssessments(projectId);
 
   React.useEffect(() => {
@@ -148,10 +150,18 @@ export default function ProjectDetailPage() {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
+          <TabsTrigger value="dashboard">대시보드</TabsTrigger>
           <TabsTrigger value="documents">문서</TabsTrigger>
           <TabsTrigger value="assessment">모의심사</TabsTrigger>
           <TabsTrigger value="report">리포트</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="dashboard" className="mt-4">
+          <DashboardTab
+            projectId={project.id}
+            onGoToAssessment={() => setTab("assessment")}
+          />
+        </TabsContent>
 
         <TabsContent value="documents" className="mt-4">
           <DocumentsTab projectId={project.id} />

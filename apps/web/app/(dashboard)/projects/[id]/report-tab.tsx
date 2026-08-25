@@ -33,6 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ApiError, assessmentsApi, toMessage } from "@/lib/api";
+import { dashboardApi } from "@/lib/api-dashboard";
 import {
   CHAPTERS,
   CHAPTER_SHORT_LABELS,
@@ -63,6 +64,18 @@ const SORT_LABELS: Record<SortKey, string> = {
   confidence: "신뢰도 높은순",
 };
 
+/** 받아 온 Blob 을 파일로 저장한다(XLSX·ZIP 공통). */
+function saveBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function ReportTab({
   projectId,
   projectName,
@@ -88,6 +101,7 @@ export function ReportTab({
   const [sortKey, setSortKey] = React.useState<SortKey>("code");
   const [openFinding, setOpenFinding] = React.useState<FindingRow | null>(null);
   const [downloading, setDownloading] = React.useState(false);
+  const [packaging, setPackaging] = React.useState(false);
 
   const canShowFindings = selected?.status === "done";
 
@@ -178,19 +192,28 @@ export function ReportTab({
     try {
       const blob = await assessmentsApi.report(projectId, assessmentId);
       const stamp = fileDateStamp(selected?.finished_at ?? selected?.started_at);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `갭리포트_${sanitizeFileName(projectName)}_${stamp}.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      saveBlob(blob, `갭리포트_${sanitizeFileName(projectName)}_${stamp}.xlsx`);
       toast.success("갭 리포트를 내려받았습니다.");
     } catch (err) {
       toast.error(toMessage(err));
     } finally {
       setDownloading(false);
+    }
+  }
+
+  /** 증적 패키지 ZIP 내려받기(PRD §7 F7). */
+  async function handleExportPackage() {
+    if (!assessmentId) return;
+    setPackaging(true);
+    try {
+      const blob = await dashboardApi.evidencePackage(projectId, assessmentId);
+      const stamp = fileDateStamp(selected?.finished_at ?? selected?.started_at);
+      saveBlob(blob, `증적패키지_${sanitizeFileName(projectName)}_${stamp}.zip`);
+      toast.success("증적 패키지를 내려받았습니다.");
+    } catch (err) {
+      toast.error(toMessage(err));
+    } finally {
+      setPackaging(false);
     }
   }
 
@@ -278,13 +301,23 @@ export function ReportTab({
               </div>
             </div>
 
-            <Button
-              type="button"
-              onClick={() => void handleExport()}
-              disabled={downloading}
-            >
-              {downloading ? "내보내는 중…" : "XLSX 내보내기"}
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                onClick={() => void handleExport()}
+                disabled={downloading}
+              >
+                {downloading ? "내보내는 중…" : "XLSX 내보내기"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleExportPackage()}
+                disabled={packaging}
+              >
+                {packaging ? "패키지 만드는 중…" : "증적 패키지(ZIP)"}
+              </Button>
+            </div>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
