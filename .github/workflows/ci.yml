@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api:
+    name: api (ruff + mypy + pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: uv 설치
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: 의존성 설치
+        run: uv sync --frozen
+
+      - name: ruff
+        run: uv run ruff check .
+
+      - name: mypy
+        run: uv run mypy app
+
+      - name: pytest
+        run: uv run pytest -q
+
+  web:
+    name: web (eslint + tsc)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node 22 설치
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: eslint
+        run: npm run lint
+
+      # build 가 next-env.d.ts 와 .next/types 를 만들어 주므로 tsc 보다 먼저 돌린다.
+      - name: build
+        run: npm run build
+
+      - name: tsc
+        run: npm run typecheck
+
+  secrets:
+    name: 비밀 스캔 (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,64 @@
+# CertPilot 로컬 개발 인프라.
+# api/web 은 컨테이너로 띄우지 않고 호스트에서 실행한다 (`make api`, `make web`).
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: certpilot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: certpilot
+      POSTGRES_PASSWORD: certpilot
+      POSTGRES_DB: certpilot
+    ports:
+      # 호스트 포트가 이미 쓰이고 있으면 .env 의 POSTGRES_PORT 로 바꾼다.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U certpilot -d certpilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7
+    container_name: certpilot-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  minio:
+    image: minio/minio
+    container_name: certpilot-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      # 로컬 전용 기본 자격증명. 운영에서는 절대 쓰지 않는다.
+      MINIO_ROOT_USER: certpilot
+      MINIO_ROOT_PASSWORD: certpilot
+    ports:
+      - "${MINIO_PORT:-9000}:9000" # S3 API
+      - "${MINIO_CONSOLE_PORT:-9001}:9001" # 웹 콘솔
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
