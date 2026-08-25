@@ -1,0 +1,25 @@
+# 환경 변수·비밀
+.env
+.env.*
+!.env.example
+
+# 공식 안내서 원본 (PRD 부록 C: gitignore 대상)
+data/raw/
+
+# Orca 작업 파일
+.orca/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+
+# OS
+.DS_Store
