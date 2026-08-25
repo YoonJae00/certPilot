@@ -13,6 +13,17 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "redis>=5.2",
     "celery>=5.4",
+    "pdfplumber>=0.11.10",
+    "pypdf>=6.16.2",
+    "bcrypt>=5.0.0",
+    "itsdangerous>=2.2.0",
+    "python-multipart>=0.0.32",
+    "openpyxl>=3.1.5",
+    "python-docx>=1.2.0",
+    "boto3>=1.43.79",
+    "pgvector>=0.5.0",
+    "pyyaml>=6.0.3",
+    "anthropic>=1.0.0",
 ]
 
 [dependency-groups]
@@ -22,6 +33,9 @@ dev = [
     "httpx>=0.28",
     "ruff>=0.8",
     "mypy>=1.13",
+    "moto>=5.2.3",
+    "types-pyyaml>=6.0.12.20260815",
+    "types-boto3>=1.43.79",
 ]
 
 [build-system]
