@@ -16,7 +16,10 @@ from app.core.db import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # `disable_existing_loggers` 기본값(True)이면 alembic.ini 에 없는 앱 로거가 전부
+    # 꺼진다. 마이그레이션을 프로세스 안에서 돌리는 테스트에서 애플리케이션 로그가
+    # 통째로 사라지므로 끈다.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
 

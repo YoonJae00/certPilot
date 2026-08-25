@@ -14,11 +14,11 @@ from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.core.rbac import CurrentUser, load_scoped_project, require_roles
-from app.llm.embeddings import get_embedding_provider
-from app.models import AuditLog, Chunk, Criterion, Document, DocumentStatus, User, UserRole
+from app.models import AuditLog, Criterion, Document, DocumentStatus, User, UserRole
 from app.schemas.document import ChunkSearchHit, ChunkSearchResponse, DocumentOut
 from app.services.audit import record_audit
 from app.services.extraction import SUPPORTED_EXTENSIONS, extension_of
+from app.services.search import build_criterion_query, search_project_chunks
 from app.services.storage import StorageError, get_storage
 from app.workers.ingest import INGEST_FAILED_ACTION, enqueue_ingest
 
@@ -202,13 +202,6 @@ def get_document(
     return _to_out(document, reasons.get(document.id))
 
 
-def build_criterion_query(criterion: Criterion) -> str:
-    """항목을 검색 쿼리 텍스트로 만든다(요구사항 + 주요 확인사항)."""
-    parts = [criterion.title, criterion.requirement]
-    parts.extend(str(checkpoint) for checkpoint in criterion.checkpoints)
-    return "\n".join(part for part in parts if part)
-
-
 @router.get("/{project_id}/chunks/search", response_model=ChunkSearchResponse)
 def search_chunks(
     project_id: uuid.UUID,
@@ -239,29 +232,18 @@ def search_chunks(
     else:
         query_text = q or ""
 
-    vector = get_embedding_provider().embed([query_text])[0]
-    distance = Chunk.embedding.cosine_distance(vector).label("distance")
-
-    rows = db.execute(
-        select(Chunk.id, Chunk.document_id, Chunk.page, Chunk.text, Document.filename, distance)
-        .join(Document, Document.id == Chunk.document_id)
-        # 프로젝트(=조직) 밖의 청크는 절대 나오지 않는다.
-        .where(Document.project_id == project.id)
-        .order_by(distance)
-        .limit(k)
-    ).all()
+    hits = search_project_chunks(db, project.id, query_text, k=k)
 
     results = [
         ChunkSearchHit(
-            chunk_id=row.id,
-            document_id=row.document_id,
-            filename=row.filename,
-            page=row.page,
-            snippet=row.text[:SNIPPET_LENGTH],
-            # 코사인 거리(0~2)를 유사도로 뒤집는다. 1.0 이 완전 일치다.
-            score=round(1.0 - float(row.distance), 6),
+            chunk_id=hit.chunk_id,
+            document_id=hit.document_id,
+            filename=hit.filename,
+            page=hit.page,
+            snippet=hit.text[:SNIPPET_LENGTH],
+            score=hit.score,
         )
-        for row in rows
+        for hit in hits
     ]
 
     return ChunkSearchResponse(
