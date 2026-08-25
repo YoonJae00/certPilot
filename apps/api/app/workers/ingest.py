@@ -7,6 +7,7 @@ S3 원문 → 텍스트 추출 → **마스킹** → 청킹 → 임베딩 → `c
 """
 
 import logging
+import threading
 import uuid
 
 from sqlalchemy import delete, select
@@ -165,12 +166,36 @@ def ingest_document(document_id: str) -> dict[str, int | str]:
 
 
 def enqueue_ingest(document_id: uuid.UUID) -> None:
-    """인제스트 잡을 큐에 넣는다. 브로커가 없으면 로그만 남기고 넘어간다.
+    """인제스트 잡을 큐에 넣는다. 워커·브로커가 없으면 스레드 폴백으로 실행한다.
 
-    업로드 API 는 브로커 장애로 500 을 내지 않는다. 문서는 `uploaded` 로 남아
-    나중에 재처리할 수 있다.
+    업로드 API 는 브로커 장애로 500 을 내지 않는다. 모의심사와 같은 폴백 정책이라
+    Celery 워커 없이도 데모에서 업로드 → 분석 완료까지 이어진다. 폴백마저 실패하면
+    문서는 `uploaded` 로 남아 나중에 재처리할 수 있다.
     """
-    try:
-        ingest_document.delay(str(document_id))
-    except Exception:  # noqa: BLE001 - 큐잉 실패가 업로드를 막으면 안 된다
-        logger.exception("인제스트 큐잉 실패: document_id=%s", document_id)
+    from app.workers.assess import has_celery_worker
+
+    if has_celery_worker():
+        try:
+            ingest_document.apply_async(args=[str(document_id)], retry=False)
+            return
+        except Exception:  # noqa: BLE001 - 큐잉 실패가 업로드를 막으면 안 된다
+            logger.warning(
+                "인제스트 큐잉 실패, 스레드 폴백으로 실행한다: document_id=%s",
+                document_id,
+                exc_info=True,
+            )
+    start_ingest_thread(document_id)
+
+
+def start_ingest_thread(document_id: uuid.UUID) -> threading.Thread:
+    """Celery 워커가 없을 때 쓰는 백그라운드 스레드 폴백(데모용)."""
+
+    def _run() -> None:
+        try:
+            run_ingest(document_id)
+        except Exception:  # noqa: BLE001 - 스레드에서 죽어도 로그는 남긴다
+            logger.exception("백그라운드 인제스트 실행 실패: document_id=%s", document_id)
+
+    thread = threading.Thread(target=_run, name=f"ingest-{document_id}", daemon=True)
+    thread.start()
+    return thread
