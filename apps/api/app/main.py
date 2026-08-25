@@ -3,7 +3,17 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from app.api import assessments, auth, connectors, documents, drafts, orgs, projects
+from app.api import (
+    assessments,
+    auth,
+    connectors,
+    dashboard,
+    documents,
+    drafts,
+    orgs,
+    projects,
+    reviews,
+)
 
 app = FastAPI(
     title="CertPilot API",
@@ -18,6 +28,8 @@ app.include_router(documents.router)
 app.include_router(assessments.router)
 app.include_router(connectors.router)
 app.include_router(drafts.router)
+app.include_router(reviews.router)
+app.include_router(dashboard.router)
 
 
 class HealthResponse(BaseModel):
