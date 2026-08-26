@@ -40,9 +40,10 @@ server {
 }
 
 server {
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    http2 on;
+    # `http2 on;` 지시어는 nginx 1.25.1+ 전용이다. 1.24(우분투 기본)에서는
+    # listen 에 http2 를 붙이는 이 구문을 쓴다.
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     server_name certpilot.autoselp.cloud;
 
     ssl_certificate     /etc/letsencrypt/live/certpilot.autoselp.cloud/fullchain.pem;
