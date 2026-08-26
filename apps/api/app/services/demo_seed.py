@@ -54,9 +54,9 @@ from app.models import (
     ReviewTask,
     ReviewTaskStatus,
     User,
-    UserRole,
 )
 from app.services.criteria_loader import count_criteria, seed_criteria
+from app.services.demo_accounts import ADMIN_EMAIL, DEMO_ACCOUNTS, DEMO_PASSWORD
 from app.services.draft_docx import draft_docx_key, render_draft_docx, store_draft_docx
 from app.services.draft_sow import build_sow_content
 from app.services.extraction import SUPPORTED_EXTENSIONS, extension_of
@@ -78,18 +78,8 @@ DEFAULT_SAMPLES_DIR = REPO_ROOT / "data" / "samples"
 DEMO_ORG_NAME = "데모핀테크"
 DEMO_PROJECT_NAME = "데모핀테크 ISMS-P 간편인증"
 
-# 데모 계정 공용 비밀번호. 발표용 더미이며 운영에 쓰지 않는다.
-DEMO_PASSWORD = "demo1234!"  # noqa: S105 - 데모 전용 더미 비밀번호
-
-# (이메일, 역할, 조직 소속 여부). reviewer·operator 는 조직에 속하지 않는다.
-DEMO_ACCOUNTS: tuple[tuple[str, UserRole, bool], ...] = (
-    ("admin@demofintech.kr", UserRole.ORG_ADMIN, True),
-    ("member@demofintech.kr", UserRole.ORG_MEMBER, True),
-    ("reviewer@certpilot.kr", UserRole.REVIEWER, False),
-    ("operator@certpilot.kr", UserRole.OPERATOR, False),
-)
-
-ADMIN_EMAIL = DEMO_ACCOUNTS[0][0]
+# 계정 상수는 `demo_accounts` 에 있다(가벼운 모듈이라 API 라우터도 임포트한다).
+# 기존 `from app.services.demo_seed import DEMO_PASSWORD` 경로를 유지하려고 여기서 재노출한다.
 
 # PRD §4 마지막 장면의 "사후심사 D-312".
 AUDIT_DUE_IN_DAYS = 312

@@ -55,6 +55,24 @@ export default function LoginPage() {
     }
   }
 
+  // 계정 없이 시드된 데모핀테크 데이터를 둘러본다. 서버가 기능을 껐으면 404 다.
+  async function handleDemoLogin() {
+    setError(null);
+    setPending(true);
+    try {
+      const user = await authApi.demoLogin();
+      setUser(user);
+      router.replace("/projects");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setError("데모 체험이 준비되어 있지 않습니다.");
+      } else {
+        setError(toMessage(err));
+      }
+      setPending(false);
+    }
+  }
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-muted/40 px-6 py-12">
       <div className="w-full max-w-sm space-y-6">
@@ -115,6 +133,28 @@ export default function LoginPage() {
                 {pending ? "로그인 중…" : "로그인"}
               </Button>
             </form>
+
+            <div className="mt-6 space-y-3">
+              <div className="flex items-center gap-3">
+                <span className="h-px flex-1 bg-border" />
+                <span className="text-xs text-muted-foreground">또는</span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={pending}
+                onClick={handleDemoLogin}
+              >
+                데모 계정으로 둘러보기
+              </Button>
+
+              <p className="text-center text-xs text-muted-foreground">
+                계정 없이 예시 회사 &lsquo;데모핀테크&rsquo;의 데이터를 둘러봅니다.
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>

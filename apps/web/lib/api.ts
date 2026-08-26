@@ -241,6 +241,10 @@ export const authApi = {
   login(input: LoginInput): Promise<User> {
     return apiFetch<User>("/auth/login", { method: "POST", json: input });
   },
+  /** 데모 체험 로그인. 서버에서 기능이 꺼져 있으면 404(ApiError). */
+  demoLogin(): Promise<User> {
+    return apiFetch<User>("/auth/demo-login", { method: "POST" });
+  },
   /** 로그아웃. 세션 쿠키를 만료시킨다. */
   logout(): Promise<void> {
     return apiFetch<void>("/auth/logout", { method: "POST" });

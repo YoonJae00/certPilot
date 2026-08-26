@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # 로컬 개발은 http 라 False. 운영 배포에서는 True 로 덮어쓴다.
     session_cookie_secure: bool = False
 
+    # 데모 체험 로그인(`POST /auth/demo-login`) 활성화 여부. True 면 비밀번호 없이
+    # 시드된 데모핀테크 org_member 계정 세션을 발급한다. 공개 시연 서버에서만 켠다.
+    # 켜기 전에 `make demo` 로 데모 데이터가 시드되어 있어야 한다.
+    demo_login_enabled: bool = False
+
     # 커넥터 자격증명 암호화 키(Fernet, base64 32바이트). 비워 두면 개발용으로
     # `session_secret` 에서 파생한 키를 쓰고 경고 로그를 남긴다(PRD §10).
     connector_encryption_key: str | None = None
