@@ -24,6 +24,7 @@ import {
 import { isUnauthorized, toMessage } from "@/lib/api";
 import { reviewApi } from "@/lib/api-review";
 import { formatDateTime } from "@/lib/labels";
+import { cn } from "@/lib/utils";
 import type { ReviewTask } from "@/lib/types-review";
 
 export default function ReviewQueuePage() {
@@ -83,14 +84,25 @@ export default function ReviewQueuePage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
+                {/* 좁은 화면에서는 종류·프로젝트·상태만 남긴다. 나머지는 프로젝트 아래 한 줄로 요약한다. */}
                 <TableRow>
-                  <TableHead className="w-[140px]">초안 종류</TableHead>
-                  <TableHead className="w-[72px]">버전</TableHead>
+                  <TableHead className="w-[92px] sm:w-[140px]">
+                    초안 종류
+                  </TableHead>
+                  <TableHead className="hidden w-[72px] md:table-cell">
+                    버전
+                  </TableHead>
                   <TableHead>프로젝트</TableHead>
-                  <TableHead className="w-[160px]">조직</TableHead>
-                  <TableHead className="w-[120px]">확인 필요</TableHead>
-                  <TableHead className="w-[110px]">상태</TableHead>
-                  <TableHead className="w-[170px]">생성일</TableHead>
+                  <TableHead className="hidden w-[160px] lg:table-cell">
+                    조직
+                  </TableHead>
+                  <TableHead className="hidden w-[120px] sm:table-cell">
+                    확인 필요
+                  </TableHead>
+                  <TableHead className="w-[88px] sm:w-[110px]">상태</TableHead>
+                  <TableHead className="hidden w-[170px] md:table-cell">
+                    생성일
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -100,23 +112,42 @@ export default function ReviewQueuePage() {
                     className="cursor-pointer"
                     onClick={() => router.push(`/review/${task.id}`)}
                   >
-                    <TableCell className="font-medium">
+                    <TableCell className="break-keep align-top font-medium sm:align-middle">
                       {draftKindLabel(task.draft.kind)}
                     </TableCell>
-                    <TableCell>v{task.draft.version}</TableCell>
-                    <TableCell>{task.draft.project_name}</TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="hidden whitespace-nowrap md:table-cell">
+                      v{task.draft.version}
+                    </TableCell>
+                    <TableCell className="break-keep align-top sm:align-middle">
+                      {task.draft.project_name}
+                      <span className="mt-0.5 block break-keep text-xs text-muted-foreground lg:hidden">
+                        {task.draft.org_name}
+                      </span>
+                      {/* 버전·생성일 열은 md 미만에서 숨으므로 그 구간엔 여기로 보여 준다. */}
+                      <span className="mt-0.5 block whitespace-nowrap text-xs text-muted-foreground md:hidden">
+                        v{task.draft.version} · {formatDateTime(task.draft.created_at)}
+                      </span>
+                      <span className="mt-0.5 block whitespace-nowrap text-xs text-muted-foreground sm:hidden">
+                        확인 필요 {needsReviewText(task.draft.stats?.needs_review)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="hidden break-keep text-muted-foreground lg:table-cell">
                       {task.draft.org_name}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden whitespace-nowrap sm:table-cell">
                       <NeedsReviewCell count={task.draft.stats?.needs_review} />
                     </TableCell>
-                    <TableCell>
-                      <Badge className={REVIEW_STATUS_CLASSES[task.status]}>
+                    <TableCell className="align-top sm:align-middle">
+                      <Badge
+                        className={cn(
+                          "whitespace-nowrap",
+                          REVIEW_STATUS_CLASSES[task.status],
+                        )}
+                      >
                         {reviewStatusLabel(task.status)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
                       {formatDateTime(task.draft.created_at)}
                     </TableCell>
                   </TableRow>
@@ -128,6 +159,11 @@ export default function ReviewQueuePage() {
       )}
     </div>
   );
+}
+
+/** 좁은 화면 요약줄에 쓰는 "확인 필요" 문구. 집계가 없으면 —. */
+function needsReviewText(count: number | undefined): string {
+  return count === undefined ? "—" : `${count}칸`;
 }
 
 /** 사람이 채워야 하는 칸 수. 0이면 강조하지 않는다. */

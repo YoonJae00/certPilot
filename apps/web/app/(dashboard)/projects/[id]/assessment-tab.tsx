@@ -7,6 +7,7 @@
  * 이 컴포넌트는 표시와 실행 요청만 맡는다.
  */
 
+import { Check } from "lucide-react";
 import * as React from "react";
 
 import type { UseAssessmentsResult } from "@/app/(dashboard)/projects/[id]/use-assessments";
@@ -216,7 +217,7 @@ function ChapterReadinessCards({
   byChapter: Partial<Record<CriterionChapter, ChapterSummary>>;
 }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {CHAPTERS.map((chapter) => {
         const stats = byChapter[chapter];
         const percent = toPercent(stats?.readiness ?? null);
@@ -306,12 +307,13 @@ function HistoryTable({
       <CardContent className="p-0">
         <Table>
           <TableHeader>
+            {/* 좁은 화면에서는 일시·상태·선택 표시만 남기고 진행·비용은 일시 아래로 내린다. */}
             <TableRow>
-              <TableHead>실행 일시</TableHead>
-              <TableHead className="w-[110px]">상태</TableHead>
-              <TableHead className="w-[130px]">진행</TableHead>
-              <TableHead className="w-[110px]">비용</TableHead>
-              <TableHead className="w-[90px]" />
+              <TableHead className="whitespace-nowrap">실행 일시</TableHead>
+              <TableHead className="w-[96px] sm:w-[110px]">상태</TableHead>
+              <TableHead className="hidden w-[130px] sm:table-cell">진행</TableHead>
+              <TableHead className="hidden w-[110px] sm:table-cell">비용</TableHead>
+              <TableHead className="w-10 sm:w-[90px]" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -325,22 +327,36 @@ function HistoryTable({
                   className={cn("cursor-pointer", isSelected && "bg-muted/60")}
                   onClick={() => onSelect(item.id)}
                 >
-                  <TableCell className="font-medium">
+                  <TableCell className="whitespace-nowrap font-medium">
                     {formatDateTime(item.started_at ?? item.finished_at)}
+                    <span className="mt-0.5 block whitespace-nowrap text-xs font-normal tabular-nums text-muted-foreground sm:hidden">
+                      {progress ? `${progress.done} / ${progress.total} 항목` : "—"}
+                      {` · ${formatCostUsd(item.cost_usd)}`}
+                    </span>
                   </TableCell>
                   <TableCell>
-                    <Badge className={cn(ASSESSMENT_STATUS_CLASSES[item.status])}>
+                    <Badge
+                      className={cn(
+                        "whitespace-nowrap",
+                        ASSESSMENT_STATUS_CLASSES[item.status],
+                      )}
+                    >
                       {ASSESSMENT_STATUS_LABELS[item.status]}
                     </Badge>
                   </TableCell>
-                  <TableCell className="tabular-nums text-muted-foreground">
+                  <TableCell className="hidden whitespace-nowrap tabular-nums text-muted-foreground sm:table-cell">
                     {progress ? `${progress.done} / ${progress.total}` : "—"}
                   </TableCell>
-                  <TableCell className="tabular-nums">
+                  <TableCell className="hidden whitespace-nowrap tabular-nums sm:table-cell">
                     {formatCostUsd(item.cost_usd)}
                   </TableCell>
-                  <TableCell className="text-right text-xs text-muted-foreground">
-                    {isSelected ? "선택됨" : ""}
+                  <TableCell className="px-1 text-center text-xs text-muted-foreground sm:px-2 sm:text-right">
+                    {isSelected ? (
+                      <span className="inline-flex items-center">
+                        <Check className="size-4 shrink-0 sm:hidden" aria-hidden />
+                        <span className="sr-only sm:not-sr-only">선택됨</span>
+                      </span>
+                    ) : null}
                   </TableCell>
                 </TableRow>
               );

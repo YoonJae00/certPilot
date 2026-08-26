@@ -31,6 +31,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { isUnauthorized, toMessage } from "@/lib/api";
 import { needsReviewCount, reviewApi } from "@/lib/api-review";
 import { formatDateTime } from "@/lib/labels";
+import { cn } from "@/lib/utils";
 import type {
   PolicySection,
   ReviewContentPatch,
@@ -217,11 +218,11 @@ export default function ReviewTaskPage() {
   const draftTitle = `${draftKindLabel(task.draft.kind)} v${task.draft.version}`;
 
   return (
-    <div className="space-y-6 pb-24">
+    <div className="space-y-6 pb-20 sm:pb-24">
       <div className="space-y-3">
         <button
           type="button"
-          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="-ml-2 inline-flex h-9 items-center rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           onClick={() => router.push("/review")}
         >
           ← 검수 큐
@@ -230,21 +231,28 @@ export default function ReviewTaskPage() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="space-y-1">
             <h1 className="text-2xl font-semibold tracking-tight">{draftTitle}</h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="break-keep text-sm text-muted-foreground">
               {task.draft.org_name} · {task.draft.project_name} ·{" "}
               {formatDateTime(task.draft.created_at)} 생성
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge className={REVIEW_STATUS_CLASSES[task.status]}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              className={cn(
+                "whitespace-nowrap",
+                REVIEW_STATUS_CLASSES[task.status],
+              )}
+            >
               {reviewStatusLabel(task.status)}
             </Badge>
             {needsReview > 0 ? (
-              <Badge variant="outline" className="text-warning">
+              <Badge variant="outline" className="whitespace-nowrap text-warning">
                 확인 필요 {needsReview}칸
               </Badge>
             ) : (
-              <Badge variant="outline">확인 필요 없음</Badge>
+              <Badge variant="outline" className="whitespace-nowrap">
+                확인 필요 없음
+              </Badge>
             )}
           </div>
         </div>
@@ -287,18 +295,26 @@ export default function ReviewTaskPage() {
       </Card>
 
       {readOnly ? null : (
+        // 좁은 화면에서 두 줄(93px)로 부풀어 표를 가리던 바를 한 줄로 눌렀다.
         <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 backdrop-blur">
-          <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3">
-            <p className="text-sm text-muted-foreground">
-              {dirtyCount > 0
-                ? `저장하지 않은 변경 ${dirtyCount}건`
-                : "변경 사항 없음"}
-              {" · "}
-              확인 필요 {needsReview}칸
+          <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-2 px-4 py-2 sm:gap-3 sm:px-6 sm:py-3">
+            <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground sm:text-sm">
+              <span className="sm:hidden">
+                {dirtyCount > 0 ? `변경 ${dirtyCount}` : "변경 없음"}
+                {` · 확인 ${needsReview}칸`}
+              </span>
+              <span className="hidden sm:inline">
+                {dirtyCount > 0
+                  ? `저장하지 않은 변경 ${dirtyCount}건`
+                  : "변경 사항 없음"}
+                {" · "}
+                확인 필요 {needsReview}칸
+              </span>
             </p>
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
               <Button
                 variant="outline"
+                className="h-9 px-3 sm:px-4"
                 onClick={handleSave}
                 disabled={saving || deciding || dirtyCount === 0}
               >
@@ -306,12 +322,14 @@ export default function ReviewTaskPage() {
               </Button>
               <Button
                 variant="destructive"
+                className="h-9 px-3 sm:px-4"
                 onClick={() => setReturnOpen(true)}
                 disabled={saving || deciding}
               >
                 반려
               </Button>
               <Button
+                className="h-9 px-3 sm:px-4"
                 onClick={() => setApproveOpen(true)}
                 disabled={saving || deciding}
               >

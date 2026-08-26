@@ -167,25 +167,41 @@ export function DocumentsTab({ projectId }: { projectId: string }) {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
+                {/* 좁은 화면에서는 파일명·상태만 남기고, 페이지 수와 일시는 파일명 아래로 옮긴다. */}
                 <TableRow>
                   <TableHead>파일명</TableHead>
-                  <TableHead className="w-[120px]">상태</TableHead>
-                  <TableHead className="w-[100px]">페이지</TableHead>
-                  <TableHead className="w-[160px]">업로드 일시</TableHead>
+                  <TableHead className="w-[96px] sm:w-[120px]">상태</TableHead>
+                  {/* 페이지 수는 md 미만에서 파일명 아래 요약줄이 담당한다(중복 표시 방지). */}
+                  <TableHead className="hidden w-[100px] md:table-cell">
+                    페이지
+                  </TableHead>
+                  <TableHead className="hidden w-[160px] md:table-cell">
+                    업로드 일시
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {documents.map((document) => (
                   <TableRow key={document.id}>
-                    <TableCell className="font-medium">
+                    <TableCell className="break-all font-medium">
                       {document.filename}
-                      <span className="ml-2 text-xs text-muted-foreground">
+                      {/* MIME 문자열은 좁은 화면에서 파일명보다 길어져 행을 잡아먹는다. */}
+                      <span className="hidden text-xs font-normal text-muted-foreground sm:ml-2 sm:inline">
                         {document.mime}
+                      </span>
+                      <span className="mt-0.5 block text-xs font-normal text-muted-foreground md:hidden">
+                        {formatDate(document.created_at)}
+                        {document.page_count === null
+                          ? ""
+                          : ` · ${document.page_count}쪽`}
                       </span>
                     </TableCell>
                     <TableCell>
                       <Badge
-                        className={cn(DOCUMENT_STATUS_CLASSES[document.status])}
+                        className={cn(
+                          "whitespace-nowrap",
+                          DOCUMENT_STATUS_CLASSES[document.status],
+                        )}
                         title={document.failure_reason ?? undefined}
                       >
                         {documentStatusLabel(document.status)}
@@ -196,12 +212,14 @@ export function DocumentsTab({ projectId }: { projectId: string }) {
                         </p>
                       ) : null}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden md:table-cell">
                       {document.page_count ?? (
                         <span className="text-muted-foreground">—</span>
                       )}
                     </TableCell>
-                    <TableCell>{formatDate(document.created_at)}</TableCell>
+                    <TableCell className="hidden whitespace-nowrap md:table-cell">
+                      {formatDate(document.created_at)}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>

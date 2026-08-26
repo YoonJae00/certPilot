@@ -81,11 +81,18 @@ export default function ProjectsPage() {
           <CardContent className="p-0">
             <Table>
               <TableHeader>
+                {/* 좁은 화면에서는 이름과 예정일만 남긴다(고정폭 3열이 이름을 세로로 무너뜨렸다). */}
                 <TableRow>
                   <TableHead>이름</TableHead>
-                  <TableHead className="w-[120px]">인증 유형</TableHead>
-                  <TableHead className="w-[120px]">간편인증</TableHead>
-                  <TableHead className="w-[220px]">사후심사 예정일</TableHead>
+                  <TableHead className="hidden w-[120px] sm:table-cell">
+                    인증 유형
+                  </TableHead>
+                  <TableHead className="hidden w-[120px] sm:table-cell">
+                    간편인증
+                  </TableHead>
+                  <TableHead className="w-[130px] sm:w-[220px]">
+                    사후심사 예정일
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -95,15 +102,28 @@ export default function ProjectsPage() {
                     className="cursor-pointer"
                     onClick={() => router.push(`/projects/${project.id}`)}
                   >
-                    <TableCell className="font-medium">{project.name}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{project.cert_type}</Badge>
+                    <TableCell className="break-keep font-medium">
+                      {project.name}
+                      {/* 숨긴 두 열의 내용은 좁은 화면에서 이름 아래에 한 줄로 남긴다. */}
+                      <span className="mt-1 block text-xs font-normal text-muted-foreground sm:hidden">
+                        {project.cert_type}
+                        {project.is_simplified ? " · 간편인증 대상" : ""}
+                      </span>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="hidden sm:table-cell">
+                      <Badge variant="outline" className="whitespace-nowrap">
+                        {project.cert_type}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell">
                       {project.is_simplified ? (
-                        <Badge variant="secondary">대상</Badge>
+                        <Badge variant="secondary" className="whitespace-nowrap">
+                          대상
+                        </Badge>
                       ) : (
-                        <span className="text-muted-foreground">해당 없음</span>
+                        <span className="whitespace-nowrap text-muted-foreground">
+                          해당 없음
+                        </span>
                       )}
                     </TableCell>
                     <TableCell>
@@ -126,16 +146,16 @@ function DueDateCell({ value }: { value: string | null }) {
   if (!value) return <span className="text-muted-foreground">미지정</span>;
 
   return (
-    <span className="flex items-center gap-2">
-      <span>{formatDate(value)}</span>
+    <span className="flex flex-wrap items-center gap-x-2">
+      <span className="whitespace-nowrap">{formatDate(value)}</span>
       {remaining !== null ? (
         <span
           className={
             remaining < 0
-              ? "text-xs text-destructive"
+              ? "whitespace-nowrap text-xs text-destructive"
               : remaining <= 30
-                ? "text-xs font-medium text-warning"
-                : "text-xs text-muted-foreground"
+                ? "whitespace-nowrap text-xs font-medium text-warning"
+                : "whitespace-nowrap text-xs text-muted-foreground"
           }
         >
           {remaining < 0 ? `${Math.abs(remaining)}일 경과` : `D-${remaining}`}

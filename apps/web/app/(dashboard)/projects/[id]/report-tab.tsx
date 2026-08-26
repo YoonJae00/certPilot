@@ -320,7 +320,7 @@ export function ReportTab({
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor="report-chapter" className="text-xs text-muted-foreground">
                 장
@@ -400,13 +400,20 @@ export function ReportTab({
         <CardContent className="p-0">
           <Table>
             <TableHeader>
+              {/* 좁은 화면에서는 코드·항목명·판정만 남긴다. 나머지는 행을 눌러 여는 상세 시트가 담당한다. */}
               <TableRow>
-                <TableHead className="w-[90px]">코드</TableHead>
+                <TableHead className="w-[64px] sm:w-[90px]">코드</TableHead>
                 <TableHead>항목명</TableHead>
-                <TableHead className="w-[110px]">판정</TableHead>
-                <TableHead className="w-[90px]">신뢰도</TableHead>
-                <TableHead className="w-[100px]">판정 주체</TableHead>
-                <TableHead className="w-[280px]">예상 결함</TableHead>
+                <TableHead className="w-[88px] sm:w-[110px]">판정</TableHead>
+                <TableHead className="hidden w-[90px] sm:table-cell">
+                  신뢰도
+                </TableHead>
+                <TableHead className="hidden w-[100px] md:table-cell">
+                  판정 주체
+                </TableHead>
+                <TableHead className="hidden w-[280px] md:table-cell">
+                  예상 결함
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -435,28 +442,37 @@ export function ReportTab({
                     className="cursor-pointer"
                     onClick={() => setOpenFinding(row)}
                   >
-                    <TableCell className="font-medium tabular-nums">
+                    <TableCell className="whitespace-nowrap align-top font-medium tabular-nums sm:align-middle">
                       {row.criterion_code}
                     </TableCell>
-                    <TableCell>
-                      <span className="font-medium">{row.title}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">
+                    <TableCell className="align-top sm:align-middle">
+                      <span className="break-keep font-medium">{row.title}</span>
+                      <span className="mt-0.5 block break-keep text-xs text-muted-foreground sm:ml-2 sm:mt-0 sm:inline">
                         {row.section}
                       </span>
+                      {/* 좁은 화면에서 숨긴 신뢰도는 항목명 아래에 남긴다. */}
+                      <span className="mt-0.5 block whitespace-nowrap text-xs tabular-nums text-muted-foreground sm:hidden">
+                        신뢰도 {formatPercent(row.confidence)}
+                      </span>
                     </TableCell>
-                    <TableCell>
-                      <Badge className={cn(FINDING_STATUS_CLASSES[row.status])}>
+                    <TableCell className="align-top sm:align-middle">
+                      <Badge
+                        className={cn(
+                          "whitespace-nowrap",
+                          FINDING_STATUS_CLASSES[row.status],
+                        )}
+                      >
                         {FINDING_STATUS_LABELS[row.status]}
                       </Badge>
                     </TableCell>
-                    <TableCell className="tabular-nums">
+                    <TableCell className="hidden tabular-nums sm:table-cell">
                       {formatPercent(row.confidence)}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell className="hidden whitespace-nowrap text-muted-foreground md:table-cell">
                       {DECIDED_BY_LABELS[row.decided_by] ?? row.decided_by}
                     </TableCell>
                     <TableCell
-                      className="max-w-[280px] truncate text-muted-foreground"
+                      className="hidden max-w-[280px] truncate text-muted-foreground md:table-cell"
                       title={row.predicted_defect ?? undefined}
                     >
                       {row.predicted_defect?.trim() ? row.predicted_defect : "—"}

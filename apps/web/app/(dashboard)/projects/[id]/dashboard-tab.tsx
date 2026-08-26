@@ -155,7 +155,7 @@ export function DashboardTab({
 
   if (!data) {
     return (
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {[0, 1, 2, 3, 4, 5].map((index) => (
           <Skeleton key={index} className="h-40 w-full" />
         ))}
@@ -185,13 +185,14 @@ export function DashboardTab({
         </Card>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      {/* grid-cols-1 과 minmax(0,1fr) 이 없으면 truncate 자식이 트랙을 밀어 문서가 가로로 넘친다. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <AuditDueCard dashboard={data} />
         <PendingReviewCard count={data.pending_review_count} />
         <CollectionCard dashboard={data} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <TopUnmetCard dashboard={data} />
         <AlertsCard
           dashboard={data}
@@ -211,7 +212,7 @@ function ChapterReadinessCards({
   readiness: NonNullable<ProjectDashboard["readiness"]>;
 }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {CHAPTERS.map((chapter) => {
         const stats = readiness.by_chapter[chapter];
         const percent = toPercent(stats?.readiness ?? null);
@@ -353,7 +354,7 @@ function CollectionCard({ dashboard }: { dashboard: ProjectDashboard }) {
 /** ② 미충족 Top 5. */
 function TopUnmetCard({ dashboard }: { dashboard: ProjectDashboard }) {
   return (
-    <Card>
+    <Card className="min-w-0">
       <CardHeader className="pb-3">
         <CardTitle className="text-sm font-medium">미충족 Top 5</CardTitle>
         <CardDescription className="text-xs">
@@ -370,13 +371,18 @@ function TopUnmetCard({ dashboard }: { dashboard: ProjectDashboard }) {
         ) : (
           <ul className="space-y-3">
             {dashboard.top_unmet.map((item) => (
-              <li key={item.criterion_code} className="space-y-1">
+              <li key={item.criterion_code} className="min-w-0 space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="tabular-nums">
+                  <Badge
+                    variant="outline"
+                    className="whitespace-nowrap tabular-nums"
+                  >
                     {item.criterion_code}
                   </Badge>
-                  <span className="text-sm font-medium">{item.title}</span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="break-keep text-sm font-medium">
+                    {item.title}
+                  </span>
+                  <span className="whitespace-nowrap text-xs text-muted-foreground">
                     확신도 {formatPercent(item.confidence)}
                   </span>
                 </div>
