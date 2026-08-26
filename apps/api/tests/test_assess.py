@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import select
 
 from app.llm.assess_prompt import CriterionPrompt, build_assess_prompt
-from app.llm.provider import FakeProvider, LLMResult, estimate_cost_usd
+from app.llm.provider import FakeProvider, JsonSchemaSpec, LLMResult, estimate_cost_usd
 from app.models import (
     Assessment,
     AssessmentStatus,
@@ -77,7 +77,9 @@ class HallucinatingProvider:
     def __init__(self) -> None:
         self.calls = 0
 
-    def complete(self, system: str, user: str) -> LLMResult:
+    def complete(
+        self, system: str, user: str, *, json_schema: JsonSchemaSpec | None = None
+    ) -> LLMResult:
         self.calls += 1
         payload = {
             "criterion_code": _code_of(user),
@@ -103,7 +105,9 @@ class EmptyReferenceProvider:
 
     model = "stub-empty-reference"
 
-    def complete(self, system: str, user: str) -> LLMResult:
+    def complete(
+        self, system: str, user: str, *, json_schema: JsonSchemaSpec | None = None
+    ) -> LLMResult:
         payload = {
             "criterion_code": _code_of(user),
             "status": "met",
@@ -128,7 +132,9 @@ class ExpensiveProvider:
 
     model = "stub-expensive"
 
-    def complete(self, system: str, user: str) -> LLMResult:
+    def complete(
+        self, system: str, user: str, *, json_schema: JsonSchemaSpec | None = None
+    ) -> LLMResult:
         payload = {
             "criterion_code": _code_of(user),
             "status": "unknown",

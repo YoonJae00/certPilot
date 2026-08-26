@@ -23,10 +23,15 @@ app = FastAPI(
     version="0.1.0",
 )
 
+_settings = get_settings()
+
 # 브라우저 프런트(다른 포트)가 세션 쿠키를 실어 호출할 수 있어야 한다.
+# `allow_origin_regex` 는 같은 네트워크의 다른 기기(http://192.168.x.x:3000 등)를 위한 것이며,
+# 설정이 비어 있으면 None 이라 Starlette 기본값과 같아 정규식 허용이 꺼진다.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in get_settings().web_origins.split(",") if o.strip()],
+    allow_origins=[o.strip() for o in _settings.web_origins.split(",") if o.strip()],
+    allow_origin_regex=_settings.web_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

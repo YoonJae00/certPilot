@@ -30,6 +30,12 @@ from app.services.storage import ObjectStorage, get_storage
 # 이 환경 변수로 알려 줘야 한다. moto 를 임포트하기 전에 설정해야 하므로 여기 둔다.
 os.environ.setdefault("MOTO_S3_CUSTOM_ENDPOINTS", Settings().s3_endpoint)
 
+# 개발자가 셸에 LLM API 키를 export 해 두었어도 테스트가 실 API(OpenAI/Anthropic)를
+# 절대 부르지 않게 제거한다. 프로바이더 선택은 auto → Fake/해싱으로 떨어진다.
+# Settings 는 요청 시점에 읽히고 세션 픽스처가 캐시를 비우므로 여기서 지우면 충분하다.
+for _llm_key in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+    os.environ.pop(_llm_key, None)
+
 API_ROOT = Path(__file__).resolve().parents[1]
 
 # 픽스처 전용 가짜 비밀번호.

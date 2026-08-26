@@ -9,20 +9,31 @@
 #
 # 주의
 #   - cron 은 로그인 셸이 아니라 PATH 가 짧다. 아래처럼 직접 지정한다.
+#     aws cli 를 /usr/local/bin 밖에 설치했다면 PATH 에 그 경로를 더한다.
 #   - 시간은 서버 로컬 타임존을 따른다. `timedatectl set-timezone Asia/Seoul` 로
 #     맞춰 두면 아래 시각이 KST 가 된다.
 #   - AWS 증적 수집(일 1회 새벽 3시)은 cron 이 아니라 Celery beat 가 돌린다
 #     (app/workers/collect.py). 여기 넣지 않는다.
+#   - 로그 디렉터리와 백업 디렉터리를 **미리** 만들고 소유권을 준다:
+#       sudo mkdir -p /var/log/certpilot /var/backups/certpilot
+#       sudo chown "$USER" /var/log/certpilot /var/backups/certpilot
 
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 MAILTO=""
 
-# 매일 04:10 — DB 백업을 S3 에 올리고 30일 초과분을 지운다.
-# 로그는 /var/log/certpilot/ 에 쌓는다(디렉터리를 미리 만들고 소유권을 준다).
+# 매일 04:10 — DB 를 BACKUP_DIR 에 덤프하고 30일 초과분을 지운다.
+# .env.prod 에 BACKUP_S3_BUCKET 이 있고 aws cli 가 설치돼 있으면 원격 사본까지 올린다.
+# 없으면 로컬 보관만 하고 정상 종료한다(aws cli 는 선택 사항이다).
 10 4 * * * /srv/certpilot/infra/deploy/backup.sh >> /var/log/certpilot/backup.log 2>&1
 
+# (선택) 매주 일요일 03:40 — compose 의 local-storage 프로파일(MinIO)을 쓰는 중이라면
+# 원문 문서가 minio_data 볼륨에만 있다. DB 백업과 별개로 이 볼륨도 받아 둔다.
+# 관리형 S3·오라클 Object Storage 를 쓴다면 이 줄은 지운다.
+40 3 * * 0 /usr/bin/docker run --rm -v certpilot_minio_data:/data -v /var/backups/certpilot:/out alpine tar czf "/out/minio-$(date -u +\%Y\%m\%d).tgz" -C /data . >> /var/log/certpilot/backup.log 2>&1
+
 # 매주 일요일 04:40 — 쓰지 않는 이미지·볼륨을 정리한다(디스크 여유 확보).
+# 오라클 무료 VM 의 부트 볼륨(기본 47GB)에서는 특히 필요하다.
 40 4 * * 0 /usr/bin/docker system prune -af --filter "until=168h" >> /var/log/certpilot/prune.log 2>&1
 
 # 매일 05:00 — 백업 로그가 300줄을 넘으면 잘라 낸다(간이 로테이션).

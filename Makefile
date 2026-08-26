@@ -14,8 +14,8 @@ dev: ## 로컬 인프라(postgres·redis·minio) 기동
 	docker compose up -d
 	@echo ""
 	@echo "인프라가 떴습니다."
-	@echo "  postgres : localhost:5432 (certpilot/certpilot, db=certpilot)"
-	@echo "  redis    : localhost:6379"
+	@echo "  postgres : localhost:$${POSTGRES_PORT:-5432} (certpilot/certpilot, db=certpilot — 포트는 .env 의 POSTGRES_PORT)"
+	@echo "  redis    : localhost:$${REDIS_PORT:-6379}"
 	@echo "  minio    : localhost:9000 (콘솔 http://localhost:9001)"
 	@echo ""
 	@echo "다음 단계: 터미널 두 개에서 'make api' 와 'make web' 을 실행하세요."

@@ -19,9 +19,34 @@ import type {
   User,
 } from "@/lib/types";
 
-/** API 기본 주소. 배포 환경에서는 NEXT_PUBLIC_API_URL 로 덮어쓴다. */
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+/** 백엔드 포트. LAN 접속 시 프런트를 연 호스트의 이 포트로 붙는다. */
+const DEFAULT_API_PORT = "8000";
+
+/** SSR·빌드 타임처럼 `window` 가 없을 때 쓰는 폴백 주소. */
+const FALLBACK_API_BASE_URL = `http://localhost:${DEFAULT_API_PORT}`;
+
+/**
+ * API 기본 주소를 정한다.
+ *
+ * 1. `NEXT_PUBLIC_API_URL` 이 설정돼 있으면 그대로 쓴다(배포 도메인·강제 지정).
+ * 2. 브라우저에서는 페이지를 연 호스트(`window.location`)의 8000 포트로 붙는다.
+ *    이렇게 해야 같은 네트워크의 다른 기기가 `http://192.168.x.x:3000` 으로 열었을 때
+ *    API 호출이 그 기기의 localhost 로 새지 않는다.
+ * 3. SSR·빌드 타임에는 localhost 로 폴백한다.
+ */
+export function getApiBaseUrl(): string {
+  // Next.js 가 빌드 타임에 치환하므로 반드시 리터럴로 참조해야 한다.
+  const configured = process.env.NEXT_PUBLIC_API_URL;
+  if (configured && configured.trim() !== "") {
+    // 뒤 슬래시를 떼어 `${base}${path}` 조합에서 `//` 가 생기지 않게 한다.
+    return configured.trim().replace(/\/+$/, "");
+  }
+  if (typeof window === "undefined") return FALLBACK_API_BASE_URL;
+  const { protocol, hostname } = window.location;
+  // `protocol` 은 콜론을 포함한다("http:"). hostname 이 비는 경우(file: 등)는 폴백.
+  if (!hostname) return FALLBACK_API_BASE_URL;
+  return `${protocol}//${hostname}:${DEFAULT_API_PORT}`;
+}
 
 /** API 호출 실패를 나타내는 오류. status 로 401(미인증) 등을 구분한다. */
 export class ApiError extends Error {
@@ -102,7 +127,8 @@ function buildUrl(
   path: string,
   query?: RequestOptions["query"],
 ): string {
-  const url = `${API_BASE_URL}${path}`;
+  // apiFetch·apiFetchBlob 모두 이 함수를 거치므로 기본 주소 결정은 여기 한 곳뿐이다.
+  const url = `${getApiBaseUrl()}${path}`;
   if (!query) return url;
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(query)) {

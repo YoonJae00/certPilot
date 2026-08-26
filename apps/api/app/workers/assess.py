@@ -36,7 +36,8 @@ from app.llm.assess_prompt import (
     LLMFinding,
     build_assess_prompt,
 )
-from app.llm.provider import LLMProvider, get_llm_provider
+from app.llm.embeddings import get_embedding_provider
+from app.llm.provider import JsonSchemaSpec, LLMProvider, get_llm_provider
 from app.models import (
     Assessment,
     AssessmentStatus,
@@ -58,12 +59,6 @@ logger = logging.getLogger(__name__)
 MAX_WORKERS = 5
 # 항목당 검색할 청크 수(PRD §7 F3 "top-8").
 TOP_K_CHUNKS = 8
-# 근거로 인정할 최소 유사도. 벡터 검색은 관련이 없어도 k 건을 채워 주므로 하한선이
-# 없으면 모든 항목에 근거가 생겨 판단불가가 사라진다. 해싱 임베딩은 유사도 스케일이
-# 낮아 값이 작다 — 실제 임베딩 API 로 교체하면 이 상수를 다시 잡아야 한다.
-# 0.05/0.10/…/0.30 스윕(데모 시드 + 골든셋 20케이스) 결과 0.10 이 최적이었다:
-# 판단불가 1→34개로 D2 복원, 골든셋 일치율 0.55→0.70(최고), unmet 정밀도·재현율 불변.
-MIN_CHUNK_SIMILARITY = 0.10
 # 최초 1회 + 재시도 2회(PRD §8 원칙 5).
 MAX_ATTEMPTS = 3
 # 1회 실행 비용 상한(PRD §7 F3 "초기 상한 5달러").
@@ -91,6 +86,20 @@ AUDIT_FAILED_ACTION = "assessment.failed"
 _INLINE_REFERENCE_RE = re.compile(r"\b(chunk|evidence):([ce]_[0-9A-Za-z-]+)")
 # 모델이 코드 펜스로 감싸는 경우를 대비한 JSON 추출.
 _JSON_OBJECT_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+# 구조화 출력을 지원하는 프로바이더에 넘기는 판정 스키마. **형식만 거들 뿐**이고
+# `_parse_finding`/`_validate_references` 검증은 이것과 무관하게 그대로 돈다.
+FINDING_JSON_SCHEMA = JsonSchemaSpec.from_model(LLMFinding, name="llm_finding")
+
+
+def min_chunk_similarity() -> float:
+    """근거로 인정할 최소 유사도.
+
+    벡터 검색은 관련이 없어도 k 건을 채워 주므로 하한선이 없으면 모든 항목에 근거가
+    생겨 판단불가가 사라진다. 적정 하한은 임베딩마다 다르므로(해싱은 유사도 스케일이
+    낮다) 값은 임베딩 프로바이더가 들고 있다 — `app/llm/embeddings.py` 참고.
+    """
+    return get_embedding_provider().recommended_min_similarity
 
 
 class FindingRejectedError(Exception):
@@ -265,6 +274,7 @@ def _assess_criterion(
     provider: LLMProvider,
     session_factory: sessionmaker[Session],
     budget: _Budget,
+    min_similarity: float,
 ) -> ItemOutcome | None:
     """항목 1개를 판정한다. 비용 상한으로 중단됐으면 None."""
     if budget.stop.is_set():
@@ -277,7 +287,7 @@ def _assess_criterion(
             project_id,
             build_criterion_query_text(criterion),
             k=TOP_K_CHUNKS,
-            min_score=MIN_CHUNK_SIMILARITY,
+            min_score=min_similarity,
         )
     except Exception:
         # 항목 하나의 실패가 전체 실행을 죽이지 않게 잡되, 로그는 반드시 남긴다.
@@ -320,7 +330,9 @@ def _assess_criterion(
         if budget.stop.is_set():
             return None
         try:
-            result = provider.complete(prompt.system, prompt.user)
+            result = provider.complete(
+                prompt.system, prompt.user, json_schema=FINDING_JSON_SCHEMA
+            )
         except Exception:
             logger.exception("LLM 호출 실패: 항목=%s 시도=%d", criterion.code, attempt)
             last_reason = "LLM 호출이 실패했다"
@@ -547,6 +559,8 @@ def run_assessment(
 
         budget = _Budget(limit=COST_LIMIT_USD)
         outcomes: list[ItemOutcome] = []
+        # 프로바이더 조회는 워커 스레드 밖에서 한 번만 한다.
+        min_similarity = min_chunk_similarity()
 
         with ThreadPoolExecutor(max_workers=MAX_WORKERS, thread_name_prefix="assess") as pool:
             futures = {
@@ -558,6 +572,7 @@ def run_assessment(
                     provider=llm,
                     session_factory=session_factory,
                     budget=budget,
+                    min_similarity=min_similarity,
                 ): criterion.code
                 for criterion in criteria
             }

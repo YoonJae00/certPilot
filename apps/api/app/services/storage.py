@@ -16,9 +16,6 @@ from app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# MinIO 는 리전 개념이 없지만 boto3 는 값을 요구한다.
-_DEFAULT_REGION = "us-east-1"
-
 
 class StorageError(RuntimeError):
     """스토리지 접근 실패."""
@@ -82,14 +79,19 @@ class ObjectStorage:
 
 
 def build_storage() -> ObjectStorage:
-    """설정값으로 스토리지 클라이언트를 만든다(캐시하지 않는다)."""
+    """설정값으로 스토리지 클라이언트를 만든다(캐시하지 않는다).
+
+    리전은 SigV4 서명에만 쓰인다. MinIO 는 어떤 값이든 통과시키지만 실제 S3 나
+    오라클 Object Storage 의 S3 호환 API 는 버킷 리전과 일치해야 한다
+    (불일치하면 `AuthorizationHeaderMalformed`). `S3_REGION` 으로 맞춘다.
+    """
     settings = get_settings()
     client = boto3.client(
         "s3",
         endpoint_url=settings.s3_endpoint,
         aws_access_key_id=settings.s3_access_key,
         aws_secret_access_key=settings.s3_secret_key,
-        region_name=_DEFAULT_REGION,
+        region_name=settings.s3_region,
         config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
     )
     return ObjectStorage(client, settings.s3_bucket)

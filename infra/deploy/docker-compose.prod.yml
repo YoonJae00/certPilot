@@ -1,18 +1,31 @@
-# CertPilot 데모 배포용 compose (EC2 1대, PRD §5 "AWS EC2 1대 + RDS(데모)").
+# CertPilot 데모 배포용 compose (VM 1대).
+#
+# 특정 클라우드에 묶이지 않는다. AWS EC2 든 오라클 클라우드 무료 VM 이든
+# docker + compose v2 가 있는 리눅스 한 대면 뜬다(README-deploy.md §1).
 #
 # 로컬 개발용 `docker-compose.yml` 과 다른 점
 #   - api·web 을 컨테이너로 띄운다(로컬은 호스트에서 `make api`/`make web`).
-#   - MinIO 가 없다. 오브젝트 스토리지는 **실제 S3** 를 쓴다(.env.prod 의 S3_*).
-#   - DB 는 기본적으로 **RDS** 다. postgres 컨테이너는 `local-db` 프로파일로
-#     묶여 있어 평소에는 뜨지 않는다(RDS 없이 한 대에서 다 돌릴 때만 켠다).
+#   - 관리형 서비스(RDS·S3)를 기본으로 본다. 관리형이 없는 VM 한 대짜리
+#     구성은 아래 두 프로파일로 컨테이너를 대신 켠다.
+#
+# 프로파일
+#   local-db       postgres 컨테이너를 켠다(RDS·관리형 DB 를 안 쓸 때).
+#                  .env.prod 의 DATABASE_URL 호스트를 `postgres` 로 바꾼다.
+#   local-storage  MinIO 컨테이너를 켠다(S3·오라클 Object Storage 를 안 쓸 때).
+#                  .env.prod 의 S3_ENDPOINT 를 `http://minio:9000` 으로 바꾼다.
 #
 # 사용:
 #   cd infra/deploy
 #   cp .env.prod.example .env.prod   # 값을 채운다
 #   ./deploy.sh
 #
-# RDS 없이 EC2 한 대에서 전부 돌릴 때:
-#   docker compose -f docker-compose.prod.yml --profile local-db up -d
+# VM 한 대에서 관리형 서비스 없이 전부 돌릴 때(오라클 무료 VM 기본 조합):
+#   docker compose -f docker-compose.prod.yml \
+#     --profile local-db --profile local-storage up -d
+#   # 또는 .env.prod 에 CERTPILOT_PROFILES=local-db,local-storage 를 넣고 ./deploy.sh
+#
+# 주의: 이 파일을 `docker compose config` 로 렌더하려면 같은 디렉터리에 `.env.prod`
+# 가 있어야 한다(서비스의 env_file 이 가리킨다). `.env.prod.example` 을 복사해 둔다.
 
 name: certpilot
 
@@ -44,8 +57,10 @@ services:
       - --forwarded-allow-ips
       - "*"
     ports:
-      # 리버스 프록시를 앞에 두므로 루프백에만 노출한다.
-      - "127.0.0.1:8000:8000"
+      # 기본은 루프백. 앞단 리버스 프록시(Nginx)가 TLS 종료와 라우팅을 맡는다.
+      # 프록시 없이 공인 IP 로 바로 접속시킬 때만 .env.prod 에서 API_BIND=0.0.0.0
+      # 으로 바꾼다(그때는 방화벽에서 8000 을 열어야 한다).
+      - "${API_BIND:-127.0.0.1}:8000:8000"
     depends_on:
       redis:
         condition: service_healthy
@@ -105,7 +120,9 @@ services:
     container_name: certpilot-web
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"
+      # api 와 같은 규칙. 프록시 없이 http://<공인IP>:3000 으로 보여 줄 때만
+      # .env.prod 에서 WEB_BIND=0.0.0.0 으로 바꾼다.
+      - "${WEB_BIND:-127.0.0.1}:3000:3000"
     depends_on:
       - api
 
@@ -132,7 +149,10 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-certpilot}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 를 .env.prod 에 설정한다}
+      # 값 검증은 deploy.sh 가 한다(이 프로파일을 켰을 때만). 여기서 `:?` 로 막으면
+      # 프로파일을 안 쓰는 관리형 DB 배포에서도 렌더가 실패한다 — 보간은 프로파일과
+      # 무관하게 먼저 일어나기 때문이다. 비어 있으면 postgres 가 기동을 거부한다.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: ${POSTGRES_DB:-certpilot}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -143,7 +163,37 @@ services:
       retries: 10
       start_period: 15s
 
+  # 실제 S3(또는 오라클 Object Storage)를 쓰지 않을 때만 켠다: `--profile local-storage`.
+  # 이 경우 .env.prod 의 S3_ENDPOINT 를 `http://minio:9000` 으로 바꾼다.
+  # api·worker 는 compose 네트워크 안에서 `minio` 이름으로 붙으므로 9000 을 호스트에
+  # 게시하지 않는다. 데이터는 이 VM 의 볼륨에만 있으니 백업 대상에 포함시킨다.
+  minio:
+    image: minio/minio
+    container_name: certpilot-minio
+    profiles: ["local-storage"]
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      # 루트 자격증명 = 앱이 쓰는 S3 키. 어긋나면 업로드가 403 으로 떨어진다.
+      # MinIO 제약(사용자 3자 이상, 비밀번호 8자 이상)은 deploy.sh 가 이 프로파일을
+      # 켰을 때만 검사한다. postgres 와 같은 이유로 여기서 `:?` 를 쓰지 않는다.
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-}
+    volumes:
+      - minio_data:/data
+    ports:
+      # 웹 콘솔만 루프백에 연다. 외부에서 볼 일이 있으면 SSH 터널을 쓴다:
+      #   ssh -L 9001:127.0.0.1:9001 <사용자>@<서버>
+      - "127.0.0.1:9001:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
 volumes:
   redis_data:
   postgres_data:
+  minio_data:
   beat_state:
