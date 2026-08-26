@@ -31,14 +31,27 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://certpilot:certpilot@localhost:5432/certpilot"
     redis_url: str = "redis://localhost:6379/0"
 
-    # 오브젝트 스토리지 (로컬은 MinIO, 운영은 S3)
+    # 오브젝트 스토리지 (로컬은 MinIO, 운영은 S3 호환 스토리지)
     s3_endpoint: str = "http://localhost:9000"
     s3_access_key: str = "certpilot"
     s3_secret_key: str = "certpilot"
     s3_bucket: str = "certpilot"
+    # SigV4 서명 리전. MinIO 는 무엇이든 통과하지만 실제 S3 호환 스토리지는 버킷
+    # 리전과 일치해야 한다(예: ap-northeast-2, 오라클은 ap-seoul-1 등).
+    s3_region: str = "us-east-1"
 
-    # LLM (없어도 부팅은 되어야 한다)
+    # LLM (없어도 부팅은 되어야 한다). 기본 프로바이더는 OpenAI 다.
+    # llm_provider: auto(키 있는 것 자동: openai → anthropic → fake) | openai | anthropic | fake
+    llm_provider: str = "auto"
+    openai_api_key: str | None = None
+    # 2026-08 기준 균형값. gpt-5.6-luna(저가)·gpt-5.5(고성능) 등으로 교체 가능.
+    openai_model: str = "gpt-5.6"
     anthropic_api_key: str | None = None
+
+    # 임베딩: auto(OPENAI_API_KEY 있으면 openai, 없으면 hashing) | openai | hashing.
+    # 프로바이더를 바꾸면 기존 청크 벡터와 비교 불가 — 문서 재인제스트(make demo)가 필요하다.
+    embedding_provider: str = "auto"
+    openai_embedding_model: str = "text-embedding-3-small"  # 기본 1536차원(Vector(1536) 일치)
 
     # 세션 쿠키 서명 키. 운영에서는 반드시 `.env`/시크릿 매니저의 값으로 덮어쓴다.
     # 여기 기본값은 로컬·테스트 전용 더미이며 실제 비밀이 아니다.
@@ -54,8 +67,19 @@ class Settings(BaseSettings):
 
     # 브라우저 프런트 출처(CORS 허용 대상). 쉼표로 여러 개. 운영 배포 시 실제 도메인으로 덮어쓴다.
     web_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    # 정규식 허용(개발 편의): 기본값은 사설망(LAN) 출처를 허용해 같은 공유기의 다른
+    # 기기에서 http://192.168.x.x:3000 으로 접속할 수 있게 한다. 운영에서는 빈 값으로
+    # 꺼서 web_origins 명시 목록만 쓰는 것을 권장한다.
+    web_origin_regex: str | None = (
+        r"^https?://(localhost|127\.0\.0\.1|10\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+        r"|192\.168\.\d{1,3}\.\d{1,3}"
+        r"|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})(:\d{1,5})?$"
+    )
 
-    @field_validator("anthropic_api_key", "connector_encryption_key", mode="after")
+    @field_validator(
+        "anthropic_api_key", "openai_api_key", "connector_encryption_key", "web_origin_regex",
+        mode="after",
+    )
     @classmethod
     def _empty_to_none(cls, value: str | None) -> str | None:
         """`.env` 에 `ANTHROPIC_API_KEY=` 로 비워 둔 경우도 미설정으로 본다."""
