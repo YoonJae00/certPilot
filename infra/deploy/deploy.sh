@@ -215,6 +215,13 @@ if has_profile "local-storage"; then
   fi
 fi
 
+# 호스트에 게시할 포트. 같은 서버에 다른 서비스가 있으면 .env.prod 에서 바꾼다
+# (컨테이너 안쪽은 항상 8000/3000 이다). 헬스체크와 안내 문구가 이 값을 따라간다.
+API_PORT="$(read_env_value API_PORT)"
+API_PORT="${API_PORT:-8000}"
+WEB_PORT="$(read_env_value WEB_PORT)"
+WEB_PORT="${WEB_PORT:-3000}"
+
 COMPOSE=(docker compose -f "${COMPOSE_FILE}" --env-file "${ENV_FILE}" ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"})
 
 # --------------------------------------------------------------------------
@@ -261,9 +268,9 @@ log "스키마 마이그레이션 (alembic upgrade head)"
 log "서비스 재기동"
 "${COMPOSE[@]}" up -d --remove-orphans
 
-log "헬스체크 대기 (최대 90초)"
+log "헬스체크 대기 (최대 90초) — http://127.0.0.1:${API_PORT}/health"
 DEADLINE=$((SECONDS + 90))
-until curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; do
+until curl -fsS "http://127.0.0.1:${API_PORT}/health" >/dev/null 2>&1; do
   if ((SECONDS >= DEADLINE)); then
     "${COMPOSE[@]}" logs --tail 50 api || true
     fail "api 가 90초 안에 뜨지 않았다."
@@ -283,12 +290,13 @@ fi
 log "현재 상태"
 "${COMPOSE[@]}" ps
 
-cat <<'EOF'
+# 포트를 안내에 넣어야 하므로 EOF 를 인용하지 않는다(본문에 $ 는 아래 두 변수뿐이다).
+cat <<EOF
 
 배포가 끝났다.
 
-  api : http://127.0.0.1:8000/health
-  web : http://127.0.0.1:3000
+  api : http://127.0.0.1:${API_PORT}/health
+  web : http://127.0.0.1:${WEB_PORT}
 
 .env.prod 의 API_BIND/WEB_BIND 를 0.0.0.0 으로 뒀다면 공인 IP 로도 열린다
 (클라우드 방화벽과 OS 방화벽에서 해당 포트를 함께 열어야 한다).

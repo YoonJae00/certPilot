@@ -1,0 +1,102 @@
+name: CD
+
+# CI 가 main 에서 녹색으로 끝나면 배포 서버에 SSH 로 붙어 배포한다.
+#
+# 왜 workflow_run 인가: ci.yml 을 건드리지 않고 "CI 통과한 커밋만 배포"를 만들기
+# 위해서다. push 트리거를 쓰면 테스트가 깨진 커밋도 서버로 나간다.
+#
+# 서드파티 액션을 쓰지 않는다(공급망을 줄인다). SSH 는 셸로 직접 다룬다.
+# 서버 1회 셋업과 시크릿 목록은 infra/deploy/README-deploy.md 의
+# "GitHub Actions CD (리버스 프록시 서버)" 절을 본다.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  workflow_dispatch:
+
+env:
+  # 서버에 git clone 이 있는 경로. CD 는 이 안에서 checkout 하고 배포 스크립트를 부른다.
+  DEPLOY_ROOT: /opt/certpilot/app
+  HEALTH_URL: https://certpilot.autoselp.cloud/api/health
+
+jobs:
+  deploy:
+    name: 배포 (certpilot.autoselp.cloud)
+    runs-on: ubuntu-latest
+    # workflow_run 은 CI 가 main 에서 성공했을 때만. 수동 실행은 무조건 배포한다.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    # 배포가 겹치면 서버의 git checkout 이 서로를 덮는다. 취소하지 말고 줄을 세운다.
+    concurrency:
+      group: certpilot-deploy
+      cancel-in-progress: false
+    environment:
+      name: production
+      url: https://certpilot.autoselp.cloud
+
+    steps:
+      - name: 배포할 커밋 결정
+        id: target
+        # workflow_run 으로 들어오면 github.sha 는 기본 브랜치 tip 이라 CI 가 검증한
+        # 커밋과 다를 수 있다. head_sha 를 써야 "CI 가 통과한 그 커밋"이 나간다.
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: SSH 키 설정
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          # 호스트 키를 미리 박아 둔다. StrictHostKeyChecking 을 끄면 중간자 공격에
+          # 무방비가 된다. 값은 `ssh-keyscan -p <포트> <호스트>` 로 만든다.
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: 서버에서 배포 실행
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT" \
+            -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
+            "$SSH_USER@$SSH_HOST" \
+            "bash -lc 'set -euo pipefail
+              cd ${{ env.DEPLOY_ROOT }}
+              git fetch origin --prune
+              git checkout --detach ${TARGET_SHA}
+              infra/deploy/deploy-from-ci.sh ${TARGET_SHA}'"
+
+      - name: 외부 헬스체크 (도메인 경유)
+        # 서버 안이 아니라 러너에서 친다. Nginx·TLS·프록시 경로까지 함께 확인된다.
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 10); do
+            if curl -fsS --max-time 10 "${{ env.HEALTH_URL }}"; then
+              echo ""
+              echo "헬스체크 통과 (${attempt}번째 시도)"
+              exit 0
+            fi
+            echo "헬스체크 대기 중... (${attempt}/10)"
+            sleep 6
+          done
+          echo "::error::${{ env.HEALTH_URL }} 가 60초 안에 응답하지 않았다."
+          exit 1
+
+      - name: SSH 키 정리
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

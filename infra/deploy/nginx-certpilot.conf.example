@@ -1,0 +1,103 @@
+# CertPilot 호스트 Nginx vhost 예시 (certpilot.autoselp.cloud).
+#
+# 쓰는 법
+#   sudo cp nginx-certpilot.conf.example /etc/nginx/conf.d/certpilot.conf
+#   sudo $EDITOR /etc/nginx/conf.d/certpilot.conf     # 도메인·포트를 환경에 맞춘다
+#   sudo nginx -t && sudo nginx -s reload
+#
+# ⚠️ 이 서버의 nginx 는 systemd 유닛(nginx.service)이 아니라 별도 프로세스로 떠 있다.
+#    `systemctl restart nginx` 를 쓰면 안 된다 — 돌고 있는 프로세스를 놔둔 채
+#    새 프로세스가 80/443 을 잡으려다 실패하거나, 다른 서비스가 함께 끊긴다.
+#    적용은 반드시 `nginx -t && nginx -s reload` (설정 검사 후 무중단 리로드)로 한다.
+#
+# 포트 전제: 같은 호스트에 다른 서비스가 이미 3000·8000 대를 쓰고 있어서
+#   CertPilot 은 .env.prod 에서 WEB_PORT=3010 / API_PORT=8010 으로 띄운다.
+#   포트를 바꾸면 아래 proxy_pass 주소도 같이 바꾼다.
+#
+# 인증서: certbot 으로 발급한다(webroot 방식).
+#   sudo mkdir -p /var/www/certbot
+#   sudo certbot certonly --webroot -w /var/www/certbot -d certpilot.autoselp.cloud
+#   # 갱신 훅도 systemd 를 부르지 않게 한다:
+#   #   --deploy-hook "nginx -t && nginx -s reload"
+#
+# ⚠️ 첫 적용 순서: 인증서가 아직 없으면 아래 443 server 블록의 ssl_certificate
+#    경로 때문에 `nginx -t` 가 실패한다. 443 블록을 통째로 주석 처리한 채
+#    80 블록만 먼저 반영(reload) → certbot 발급 → 주석 해제 → 다시 reload 한다.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name certpilot.autoselp.cloud;
+
+    # certbot webroot 갱신 경로만 http 로 남긴다.
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name certpilot.autoselp.cloud;
+
+    ssl_certificate     /etc/letsencrypt/live/certpilot.autoselp.cloud/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/certpilot.autoselp.cloud/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+
+    # 문서 업로드 상한은 앱에서 20MB 다. 멀티파트 오버헤드 여유를 둔다.
+    client_max_body_size 25m;
+
+    # web·api 를 같은 오리진으로 묶는다. 브라우저에서 보면 전부
+    # https://certpilot.autoselp.cloud 이므로 CORS 가 필요 없고,
+    # 세션 쿠키도 SameSite 문제 없이 붙는다.
+    #   NEXT_PUBLIC_API_URL=https://certpilot.autoselp.cloud/api
+    #   WEB_ORIGINS=https://certpilot.autoselp.cloud
+    #   SESSION_COOKIE_SECURE=true
+
+    location /api/ {
+        # proxy_pass 주소 끝의 `/` 가 핵심이다. 이게 있으면 `/api` 접두사를 떼고
+        # 넘긴다(/api/health → /health). 빼면 api 가 /api/health 를 받아 404 가 난다.
+        proxy_pass http://127.0.0.1:8010/;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        $connection_upgrade;
+
+        # 모의심사 실행·문서 생성처럼 오래 걸리는 요청이 게이트웨이 타임아웃으로
+        # 끊기지 않게 한다(기본 60초로는 모자란다).
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3010;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Next.js 개발용 HMR·웹소켓 대비. 운영(next start)에서도 두어 손해가 없다.
+        proxy_set_header Upgrade           $http_upgrade;
+        proxy_set_header Connection        $connection_upgrade;
+    }
+}
+
+# 위 두 location 의 `Connection $connection_upgrade` 는 아래 map 이 http 블록에
+# 있어야 동작한다. 이미 다른 vhost 가 같은 map 을 정의해 뒀다면 중복 정의가 되므로
+# (`duplicate map "$http_upgrade"`) 이 파일에서는 빼고 기존 것을 쓴다.
+# 없다면 /etc/nginx/conf.d/ 안의 아무 파일 최상단(server 블록 밖)에 한 번만 넣는다.
+#
+# map $http_upgrade $connection_upgrade {
+#     default upgrade;
+#     ''      close;
+# }

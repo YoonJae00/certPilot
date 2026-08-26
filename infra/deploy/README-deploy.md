@@ -32,8 +32,8 @@ VM 한 대면 어디서든 같은 명령으로 뜬다. AWS 관리형 서비스(R
 
 | 서비스 | 역할 | 포트 | 프로파일 |
 | --- | --- | --- | --- |
-| `api` | FastAPI (uvicorn) | `${API_BIND}:8000` | 항상 |
-| `web` | Next.js (`next start`) | `${WEB_BIND}:3000` | 항상 |
+| `api` | FastAPI (uvicorn) | `${API_BIND}:${API_PORT}` (기본 8000) | 항상 |
+| `web` | Next.js (`next start`) | `${WEB_BIND}:${WEB_PORT}` (기본 3000) | 항상 |
 | `worker` | Celery 워커 — 인제스트·모의심사·수집 | - | 항상 |
 | `beat` | Celery 비트 — 일 1회 증적 수집 스케줄 | - | 항상 |
 | `redis` | Celery 브로커·결과 백엔드 | 내부 전용 | 항상 |
@@ -42,6 +42,10 @@ VM 한 대면 어디서든 같은 명령으로 뜬다. AWS 관리형 서비스(R
 
 `API_BIND` / `WEB_BIND` 는 기본값이 `127.0.0.1` 이다. 앞단에 리버스 프록시를 두는
 구성에서는 그대로 두고, 공인 IP 로 바로 접속시킬 때만 `0.0.0.0` 으로 바꾼다(§1.5).
+
+`API_PORT` / `WEB_PORT` 는 **호스트에 게시할 포트**다(컨테이너 안쪽은 항상 8000/3000).
+그 서버에 다른 서비스가 이미 8000·3000 을 쓰고 있으면 이 값만 겹치지 않게 바꾼다
+(§4 "GitHub Actions CD" 의 서버가 그렇다 — 8010/3010 을 쓴다).
 
 ---
 
@@ -661,6 +665,125 @@ docker compose -f docker-compose.prod.yml --env-file .env.prod \
 
 > `docker compose config` 로 렌더만 해 볼 때도 같은 디렉터리에 `.env.prod` 가 있어야
 > 한다(서비스의 `env_file` 이 그 파일을 가리킨다).
+
+### GitHub Actions CD (리버스 프록시 서버)
+
+`main` 에 push 하면 사람 손 없이 배포되게 하는 구성이다. 대상은 **다른 서비스가 이미
+돌고 있는 리눅스 VM 1대**이고, 호스트 Nginx 가 80/443 을 갖고 있다. 그래서 CertPilot 은
+겹치지 않는 포트(`web` 3010 / `api` 8010)에 붙고, Nginx 가
+`https://certpilot.autoselp.cloud` 로 넘겨준다.
+
+```
+main push → CI(ci.yml) 녹색 → CD(cd.yml) 트리거(workflow_run)
+          → SSH 로 서버 접속
+          → cd /opt/certpilot/app && git fetch && git checkout --detach <sha>
+          → infra/deploy/deploy-from-ci.sh <sha>
+               └ IMAGE_TAG=<sha> ./deploy.sh
+                   ├ 성공 → /opt/certpilot/last_good_sha 갱신, 종료 0
+                   └ 실패 → last_good 커밋으로 checkout 후 재배포(롤백), 종료 1
+          → 러너에서 https://certpilot.autoselp.cloud/api/health 확인 (10회 × 6초)
+```
+
+CD 가 배포하는 커밋은 `workflow_run.head_sha` — **CI 가 실제로 검증한 그 커밋**이다.
+`workflow_dispatch` 로 수동 실행하면 선택한 브랜치의 `github.sha` 를 쓴다.
+
+롤백해도 CD 는 빨간불로 끝난다. 서비스는 복구됐지만 배포는 실패한 것이기 때문이다.
+로그에 "롤백 성공 / 롤백도 실패" 가 한국어로 남으니 그것으로 상태를 판단한다.
+
+#### 서버 1회 셋업
+
+```bash
+# 1. 배포 루트 — CD 는 이 안의 git clone 하나만 쓴다
+sudo mkdir -p /opt/certpilot && sudo chown "$USER" /opt/certpilot
+git clone https://github.com/YoonJae00/certPilot.git /opt/certpilot/app
+
+# 2. .env.prod — 체크아웃으로 지워지지 않는다(gitignore 대상이라 추적되지 않는다)
+cd /opt/certpilot/app/infra/deploy
+cp .env.prod.example .env.prod
+chmod 600 .env.prod
+$EDITOR .env.prod
+```
+
+이 서버에서 기본값과 달라야 하는 값들.
+
+```dotenv
+API_PORT=8010                 # 8000 은 옆 서비스가 쓰고 있다
+WEB_PORT=3010                 # 3000 도 마찬가지
+API_BIND=127.0.0.1            # 외부는 Nginx 만 통한다
+WEB_BIND=127.0.0.1
+
+NEXT_PUBLIC_API_URL=https://certpilot.autoselp.cloud/api
+WEB_ORIGINS=https://certpilot.autoselp.cloud
+WEB_ORIGIN_REGEX=             # 공개 배포다 — 사설망 허용 정규식을 끈다
+SESSION_COOKIE_SECURE=true    # https 다
+```
+
+```bash
+# 3. Nginx vhost + 인증서 — 두 단계로 나눈다.
+#    처음에는 인증서 파일이 아직 없어서 443 블록째로 넣으면 `nginx -t` 가 실패한다.
+sudo mkdir -p /var/www/certbot
+sudo cp /opt/certpilot/app/infra/deploy/nginx-certpilot.conf.example \
+        /etc/nginx/conf.d/certpilot.conf
+
+# 3-1. 443 server 블록 전체를 주석 처리한 채(80 블록만) 먼저 반영한다
+sudo $EDITOR /etc/nginx/conf.d/certpilot.conf
+sudo nginx -t && sudo nginx -s reload
+
+# 3-2. 인증서를 발급받는다 (80 블록의 acme-challenge 경로로 검증된다)
+sudo certbot certonly --webroot -w /var/www/certbot -d certpilot.autoselp.cloud \
+     --deploy-hook "nginx -t && nginx -s reload"
+
+# 3-3. 443 블록 주석을 풀고 다시 반영한다
+sudo $EDITOR /etc/nginx/conf.d/certpilot.conf
+sudo nginx -t && sudo nginx -s reload
+```
+
+> 이 서버의 nginx 는 systemd 유닛이 아니라 별도 프로세스로 떠 있다.
+> **`systemctl restart nginx` 를 쓰지 않는다.** 적용은 `nginx -t && nginx -s reload` 로만.
+
+```bash
+# 4. CD 가 쓸 SSH 공개키 등록 (러너에서 접속할 키. 새로 만든 전용 키를 권장)
+#    로컬에서: ssh-keygen -t ed25519 -C certpilot-cd -f ~/.ssh/certpilot_cd
+cat >> ~/.ssh/authorized_keys   # 여기에 certpilot_cd.pub 내용을 붙인다
+
+# 5. 첫 배포는 손으로 한 번 돌려 본다(CD 는 이미 도는 스택을 갱신하는 용도다)
+cd /opt/certpilot/app/infra/deploy && ./deploy.sh
+```
+
+#### GitHub 쪽 설정
+
+리포지토리 Settings > Environments > **`production`** 을 만들고 secrets 5개를 넣는다.
+(environment 로 두면 필요할 때 승인 게이트·브랜치 제한을 붙일 수 있다.)
+
+| 시크릿 | 값 | 만드는 법 |
+| --- | --- | --- |
+| `SSH_HOST` | 서버 주소 | 공인 IP 또는 호스트명 |
+| `SSH_PORT` | SSH 포트 | 보통 `22` |
+| `SSH_USER` | 접속 계정 | docker 그룹에 속하고 `/opt/certpilot` 에 쓸 수 있어야 한다 |
+| `SSH_PRIVATE_KEY` | 개인키 전문 | `cat ~/.ssh/certpilot_cd` (`-----BEGIN` ~ `-----END` 줄 포함) |
+| `SSH_KNOWN_HOSTS` | 서버 호스트 키 | `ssh-keyscan -p <포트> <호스트>` 출력 그대로 |
+
+`SSH_KNOWN_HOSTS` 를 채우는 이유는 `StrictHostKeyChecking` 을 끄지 않기 위해서다.
+끄면 중간자 공격에 무방비가 된다. 서버를 재설치해 호스트 키가 바뀌면 이 값도 갱신한다.
+
+CD 는 서드파티 액션을 쓰지 않는다(공급망을 줄인다). SSH 는 워크플로 안에서 셸로 직접
+다루고, 작업이 끝나면 개인키 파일을 지운다.
+
+#### 확인과 문제 해결
+
+```bash
+curl -fsS https://certpilot.autoselp.cloud/api/health     # {"status":"ok"}
+cat /opt/certpilot/last_good_sha                          # 마지막 성공 커밋
+cd /opt/certpilot/app && git log -1 --oneline             # 지금 떠 있는 커밋
+```
+
+| 증상 | 먼저 볼 곳 |
+| --- | --- |
+| CD 가 아예 안 돈다 | CI 가 `main` 에서 성공했는지. 다른 브랜치·실패면 배포하지 않는다 |
+| SSH 단계에서 멈춘다 | `SSH_KNOWN_HOSTS` 가 현재 호스트 키와 같은지, 공개키가 `authorized_keys` 에 있는지 |
+| `deploy.sh` 가 `.env.prod` 로 실패 | 체크아웃 후에도 `infra/deploy/.env.prod` 가 있는지, 권한이 600 인지 |
+| 배포는 됐는데 헬스체크만 실패 | Nginx `proxy_pass` 포트가 `.env.prod` 의 `API_PORT` 와 같은지, `/api/` 끝 슬래시가 있는지 |
+| 롤백이 반복된다 | 서버에서 `./deploy.sh` 를 직접 돌려 진짜 실패 원인을 본다 |
 
 ---
 
