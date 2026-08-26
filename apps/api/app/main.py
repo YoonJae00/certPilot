@@ -11,6 +11,7 @@ from app.api import (
     dashboard,
     documents,
     drafts,
+    graph,
     orgs,
     projects,
     reviews,
@@ -46,6 +47,7 @@ app.include_router(connectors.router)
 app.include_router(drafts.router)
 app.include_router(reviews.router)
 app.include_router(dashboard.router)
+app.include_router(graph.router)
 
 
 class HealthResponse(BaseModel):
