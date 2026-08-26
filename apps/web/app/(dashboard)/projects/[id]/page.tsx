@@ -7,6 +7,7 @@ import * as React from "react";
 import { AssessmentTab } from "@/app/(dashboard)/projects/[id]/assessment-tab";
 import { DashboardTab } from "@/app/(dashboard)/projects/[id]/dashboard-tab";
 import { DocumentsTab } from "@/app/(dashboard)/projects/[id]/documents-tab";
+import { GraphTab } from "@/app/(dashboard)/projects/[id]/graph-tab";
 import { ReportTab } from "@/app/(dashboard)/projects/[id]/report-tab";
 import { useAssessments } from "@/app/(dashboard)/projects/[id]/use-assessments";
 import { Badge } from "@/components/ui/badge";
@@ -154,6 +155,7 @@ export default function ProjectDetailPage() {
           <TabsTrigger value="documents">문서</TabsTrigger>
           <TabsTrigger value="assessment">모의심사</TabsTrigger>
           <TabsTrigger value="report">리포트</TabsTrigger>
+          <TabsTrigger value="graph">지식 그래프</TabsTrigger>
         </TabsList>
 
         <TabsContent value="dashboard" className="mt-4">
@@ -178,6 +180,14 @@ export default function ProjectDetailPage() {
           <ReportTab
             projectId={project.id}
             projectName={project.name}
+            assessments={assessments}
+            onGoToAssessment={() => setTab("assessment")}
+          />
+        </TabsContent>
+
+        <TabsContent value="graph" className="mt-4">
+          <GraphTab
+            projectId={project.id}
             assessments={assessments}
             onGoToAssessment={() => setTab("assessment")}
           />
