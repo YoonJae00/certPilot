@@ -441,7 +441,8 @@ export const GraphCanvas = React.forwardRef<
       layout: { name: "preset", fit: true, padding: FIT_PADDING },
       minZoom: 0.3,
       maxZoom: 4,
-      wheelSensitivity: 0.2,
+      // 기본값 1 은 트랙패드에서 튀고, 0.2 는 휠 마우스에서 답답하다. 중간값으로 둔다.
+      wheelSensitivity: 0.7,
       boxSelectionEnabled: false,
       // 노드를 끌어 옮기면 결정적 배치가 깨진다.
       autoungrabify: true,
